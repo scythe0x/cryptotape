@@ -4,37 +4,49 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-var wsParseErrCount int
+const (
+	binanceURL     = "wss://fstream.binance.com/ws/!ticker@arr"
+	reconnectDelay = 5 * time.Second
+)
 
-// connects to the binance websocket and writes the data to the channel
+// StartBinanceStream подключается к Binance !ticker@arr и пишет тики в out.
+// При обрыве соединения переподключается через reconnectDelay.
+// Завершается только если out закрыт (никогда при нормальной работе).
 func StartBinanceStream(out chan<- TickerUpdate) {
-	// https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/All-Market-Tickers-Streams
-	// all market tickers stream
-	url := "wss://fstream.binance.com/ws/!ticker@arr"
+	logger := log.New(os.Stdout, "[ws/binance] ", log.LstdFlags|log.Lshortfile)
 
-	logger := log.New(os.Stdout, "[ws, binance] ", log.LstdFlags | log.Lshortfile)
+	for {
+		if err := runBinanceConn(out, logger); err != nil {
+			logger.Printf("connection error: %v — reconnecting in %s", err, reconnectDelay)
+		}
+		time.Sleep(reconnectDelay)
+	}
+}
 
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+func runBinanceConn(out chan<- TickerUpdate, logger *log.Logger) error {
+	conn, _, err := websocket.DefaultDialer.Dial(binanceURL, nil)
 	if err != nil {
-		logger.Fatal("error connecting to stream:", err)
+		return err
 	}
 	defer conn.Close()
-
-	logger.Println("connected to stream")
+	logger.Println("connected")
 
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			logger.Fatal("error reading message from stream:", err)
+			return err
 		}
 
-		tickers, parsingError := parseBinanceStream(message)
-		if parsingError != nil {
-			logger.Fatal("parsing error: ", parsingError)
+		tickers, err := parseBinanceStream(message)
+		if err != nil {
+			// Одно битое сообщение не должно убивать поток
+			logger.Printf("parse error (skipping): %v", err)
+			continue
 		}
 
 		for _, t := range tickers {
@@ -45,10 +57,8 @@ func StartBinanceStream(out chan<- TickerUpdate) {
 
 func parseBinanceStream(raw []byte) ([]TickerUpdate, error) {
 	var ticks []TickerUpdate
-
-	if err := json.Unmarshal(raw, &ticks); err == nil {
-		return ticks, nil
+	if err := json.Unmarshal(raw, &ticks); err != nil {
+		return nil, err
 	}
-
 	return ticks, nil
 }
