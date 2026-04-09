@@ -1,4 +1,4 @@
-module cryptotape-backend
+module github.com/whoiscyberial/cryptotape/backend
 
 go 1.26.1
 

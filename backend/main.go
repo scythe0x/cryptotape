@@ -3,13 +3,16 @@ package main
 import (
 	"fmt"
 	"time"
+
+	"github.com/whoiscyberial/cryptotape/backend/engine"
+	"github.com/whoiscyberial/cryptotape/backend/types"
 )
 
 func main() {
-	tickerChan := make(chan BookTickerUpdate, 4096)
-	alertChan := make(chan Alert, 2048)
+	tickerChan := make(chan types.BookTickerUpdate, 4096)
+	alertChan := make(chan types.Alert, 2048)
 
-	engine := NewEngine(priceImpulseRules, priceSampleRetain)
+	engine := engine.NewEngine(priceImpulseRules, priceSampleRetain)
 
 	go StartBinanceStream(watchSymbols, tickerChan)
 

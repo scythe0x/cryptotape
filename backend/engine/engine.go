@@ -1,9 +1,11 @@
-package main
+package engine
 
 import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/whoiscyberial/cryptotape/backend/types"
 
 	"github.com/google/uuid"
 )
@@ -68,7 +70,7 @@ func (e *Engine) getState(symbol string) *symbolState {
 	return st
 }
 
-func (e *Engine) Process(tick BookTickerUpdate, alertChan chan<- Alert, now time.Time) {
+func (e *Engine) Process(tick types.BookTickerUpdate, alertChan chan<- types.Alert, now time.Time) {
 	st := e.getState(tick.Symbol)
 
 	p := pricePoint{Price: tick.MidPrice, At: now}
@@ -76,7 +78,7 @@ func (e *Engine) Process(tick BookTickerUpdate, alertChan chan<- Alert, now time
 	st.addPoint(p)
 	st.trim(now, e.maxWindow)
 
-	out := make([]Alert, 0, len(e.rules))
+	out := make([]types.Alert, 0, len(e.rules))
 
 	for i, rule := range e.rules {
 		ok, pct, base := detectMove(p, st.min, st.max, rule.ThresholdPct)
@@ -126,7 +128,7 @@ func (e *Engine) Process(tick BookTickerUpdate, alertChan chan<- Alert, now time
 			imp = newImp
 		}
 
-		out = append(out, Alert{
+		out = append(out, types.Alert{
 			Symbol:     tick.Symbol,
 			ImpulseID:  imp.ID,
 			Type:       "PRICE_IMPULSE",

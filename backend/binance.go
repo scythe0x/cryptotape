@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/websocket"
+	"github.com/whoiscyberial/cryptotape/backend/types"
 )
 
 const (
@@ -15,7 +16,7 @@ const (
 )
 
 // main function - builds an url with buildCombinedURL() and connects to WS with rubBinanceConn()
-func StartBinanceStream(symbols []string, out chan<- BookTickerUpdate) {
+func StartBinanceStream(symbols []string, out chan<- types.BookTickerUpdate) {
 	logger := log.New(os.Stdout, "[ws/binance] ", log.LstdFlags|log.Lshortfile)
 
 	url := buildCombinedURL(symbols)
@@ -38,7 +39,7 @@ func buildCombinedURL(symbols []string) string {
 }
 
 // connects to binance stream websocket and streams parsed messages to a channel
-func runBinanceConn(url string, out chan<- BookTickerUpdate, logger *log.Logger) error {
+func runBinanceConn(url string, out chan<- types.BookTickerUpdate, logger *log.Logger) error {
 	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
 		return err
@@ -62,13 +63,13 @@ func runBinanceConn(url string, out chan<- BookTickerUpdate, logger *log.Logger)
 }
 
 // parse WS message and convert it to BookTickerUpdate
-func parseCombinedBookTicker(raw []byte) (*BookTickerUpdate, error) {
-	var wrapper combinedWrapper
+func parseCombinedBookTicker(raw []byte) (*types.BookTickerUpdate, error) {
+	var wrapper types.CombinedWrapper
 	if err := json.Unmarshal(raw, &wrapper); err != nil {
 		return nil, fmt.Errorf("wrapper: %w", err)
 	}
 
-	var tick BookTickerUpdate
+	var tick types.BookTickerUpdate
 	if err := json.Unmarshal(wrapper.Data, &tick); err != nil {
 		return nil, fmt.Errorf("bookTicker data: %w", err)
 	}

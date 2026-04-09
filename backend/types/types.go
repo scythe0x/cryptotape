@@ -21,7 +21,7 @@ type BookTickerUpdate struct {
 }
 
 // combinedWrapper — обёртка combined stream Binance: {"stream":"...","data":{...}}
-type combinedWrapper struct {
+type CombinedWrapper struct {
 	Stream string          `json:"stream"`
 	Data   json.RawMessage `json:"data"`
 }
