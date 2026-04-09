@@ -6,84 +6,70 @@ import (
 	"time"
 )
 
-// TickerUpdate — один тикер из потока !ticker@arr (Binance USDM Futures).
-// Binance присылает только символы, у которых изменилось хоть одно поле.
-// https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/All-Market-Tickers-Streams
-type TickerUpdate struct {
-	Symbol      string
-	LastPrice   json.Number // "c" — последняя цена сделки
-	PriceChange json.Number // "p" — абсолютное изменение цены за rolling 24h
-	PriceChangePct json.Number // "P" — % изменения за rolling 24h
-	OpenPrice   json.Number // "o" — цена открытия rolling 24h окна
-	HighPrice   json.Number // "h" — максимум за 24h
-	LowPrice    json.Number // "l" — минимум за 24h
-	WeightedAvgPrice json.Number // "w" — средневзвешенная цена
-	BaseVolume  json.Number // "v" — объём базового актива
-	QuoteVolume json.Number // "q" — объём котируемого актива
-	LastQty     json.Number // "Q" — объём последней сделки
-	TradesCount json.Number // "n" — количество сделок
-	OpenTime    time.Time   // "O" — начало rolling окна
-	CloseTime   time.Time   // "C" — конец rolling окна
-	FirstTradeID int64      // "F"
-	LastTradeID  int64      // "L"
-	UpdatedAt   time.Time   // "E" — время события (используется как timestamp тика)
+// BookTickerUpdate — обновление лучшего bid/ask из потока <symbol>@bookTicker.
+// https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Individual-Symbol-Book-Ticker-Streams
+type BookTickerUpdate struct {
+	Symbol    string
+	UpdateID  int64
+	EventTime time.Time
+	TxTime    time.Time
+	BidPrice  float64 // "b" — лучшая цена покупки
+	BidQty    float64 // "B" — объём на лучшем bid
+	AskPrice  float64 // "a" — лучшая цена продажи
+	AskQty    float64 // "A" — объём на лучшем ask
+	MidPrice  float64 // (bid+ask)/2
 }
 
-func (t *TickerUpdate) UnmarshalJSON(data []byte) error {
-	// Явно объявляем "e" как string — иначе Go json матчит "e" и "E"
-	// без учёта регистра (case-insensitive fallback), и "24hrTicker"
-	// попадает в поле UpdatedAt типа json.Number → ошибка парсинга.
+// combinedWrapper — обёртка combined stream Binance: {"stream":"...","data":{...}}
+type combinedWrapper struct {
+	Stream string          `json:"stream"`
+	Data   json.RawMessage `json:"data"`
+}
+
+func (t *BookTickerUpdate) UnmarshalJSON(data []byte) error {
 	type raw struct {
-		EventType        string      `json:"e"` // "24hrTicker" — нужно объявить явно
-		Symbol           string      `json:"s"`
-		LastPrice        json.Number `json:"c"`
-		PriceChange      json.Number `json:"p"`
-		PriceChangePct   json.Number `json:"P"`
-		OpenPrice        json.Number `json:"o"`
-		HighPrice        json.Number `json:"h"`
-		LowPrice         json.Number `json:"l"`
-		WeightedAvgPrice json.Number `json:"w"`
-		BaseVolume       json.Number `json:"v"`
-		QuoteVolume      json.Number `json:"q"`
-		LastQty          json.Number `json:"Q"`
-		TradesCount      json.Number `json:"n"`
-		OpenTime         json.Number `json:"O"`
-		CloseTime        json.Number `json:"C"`
-		FirstTradeID     int64       `json:"F"`
-		LastTradeID      int64       `json:"L"`
-		UpdatedAt        json.Number `json:"E"`
+		EventType string      `json:"e"`
+		UpdateID  int64       `json:"u"`
+		EventTime json.Number `json:"E"`
+		TxTime    json.Number `json:"T"`
+		Symbol    string      `json:"s"`
+		BidPrice  json.Number `json:"b"`
+		BidQty    json.Number `json:"B"`
+		AskPrice  json.Number `json:"a"`
+		AskQty    json.Number `json:"A"`
 	}
+
 	var r raw
 	if err := json.Unmarshal(data, &r); err != nil {
 		return err
 	}
 
-	updatedAt, err := parseEpochMs(r.UpdatedAt)
+	eventTime, err := parseEpochMs(r.EventTime)
 	if err != nil {
 		return err
 	}
-	openTime, _ := parseEpochMs(r.OpenTime)   // не критично если не распарсится
-	closeTime, _ := parseEpochMs(r.CloseTime)
 
-	*t = TickerUpdate{
-		Symbol:           r.Symbol,
-		LastPrice:        r.LastPrice,
-		PriceChange:      r.PriceChange,
-		PriceChangePct:   r.PriceChangePct,
-		OpenPrice:        r.OpenPrice,
-		HighPrice:        r.HighPrice,
-		LowPrice:         r.LowPrice,
-		WeightedAvgPrice: r.WeightedAvgPrice,
-		BaseVolume:       r.BaseVolume,
-		QuoteVolume:      r.QuoteVolume,
-		LastQty:          r.LastQty,
-		TradesCount:      r.TradesCount,
-		OpenTime:         openTime,
-		CloseTime:        closeTime,
-		FirstTradeID:     r.FirstTradeID,
-		LastTradeID:      r.LastTradeID,
-		UpdatedAt:        updatedAt,
+	txTime, _ := parseEpochMs(r.TxTime)
+
+	bid, _ := r.BidPrice.Float64()
+	ask, _ := r.AskPrice.Float64()
+	bidQty, _ := r.BidQty.Float64()
+	askQty, _ := r.AskQty.Float64()
+
+	mid := (bid + ask) / 2
+
+	*t = BookTickerUpdate{
+		Symbol:    r.Symbol,
+		UpdateID:  r.UpdateID,
+		EventTime: eventTime,
+		TxTime:    txTime,
+		BidPrice:  bid,
+		BidQty:    bidQty,
+		AskPrice:  ask,
+		AskQty:    askQty,
+		MidPrice:  mid,
 	}
+
 	return nil
 }
 
@@ -98,10 +84,14 @@ func parseEpochMs(n json.Number) (time.Time, error) {
 	return time.UnixMilli(ms), nil
 }
 
-// Alert — сигнал, отправляемый клиентам.
+// Alert — сигнал об импульсе цены.
 type Alert struct {
-	Symbol    string
-	Type      string
-	Message   string
-	Timestamp time.Time
+	Symbol     string
+	ImpulseID  string
+	Type       string
+	MovePct    float64
+	Duration   time.Duration
+	StartPrice float64
+	EndPrice   float64
+	Timestamp  time.Time
 }

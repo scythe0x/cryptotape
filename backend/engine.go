@@ -1,161 +1,262 @@
 package main
 
 import (
-	"fmt"
-	"math"
+	"strconv"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
-// ImpulseRule описывает условие импульса:
-// цена должна пройти |ThresholdPct|% за время не более MaxDuration.
 type ImpulseRule struct {
 	ThresholdPct float64
 	MaxDuration  time.Duration
-	Cooldown     time.Duration
+}
+
+type pricePoint struct {
+	Price float64
+	At    time.Time
+}
+
+type impulse struct {
+	ID         string
+	Direction  int
+	StartPrice float64
+	StartAt    time.Time
+	LastPrice  float64
+	LastAt     time.Time
+}
+
+type symbolState struct {
+	mu sync.Mutex
+
+	points []pricePoint // sliding window of recent ticks
+	min    pricePoint   // min price in window
+	max    pricePoint   // max price in window
 }
 
 type Engine struct {
-	mu          sync.Mutex
-	tickUpdates map[string][]TickerUpdate
-	tickMaxAge  time.Duration
-	rules       []ImpulseRule
-	cooldown    map[string]time.Time // key: "SYMBOL|ruleIdx"
+	statesMu sync.RWMutex
+	states   map[string]*symbolState
+
+	rules []ImpulseRule
+
+	impMu        sync.RWMutex
+	impulses     map[string]*impulse
+	lastBySymbol map[string]*impulse
+
+	maxWindow time.Duration
 }
 
-func NewEngine(rules []ImpulseRule, tickMaxAge time.Duration) *Engine {
+func NewEngine(rules []ImpulseRule, _ time.Duration) *Engine {
+	var maxW time.Duration
+	for _, r := range rules {
+		if r.MaxDuration > maxW {
+			maxW = r.MaxDuration
+		}
+	}
+
 	return &Engine{
-		tickUpdates: make(map[string][]TickerUpdate),
-		tickMaxAge:  tickMaxAge,
-		rules:       rules,
-		cooldown:    make(map[string]time.Time),
+		states:       make(map[string]*symbolState),
+		rules:        rules,
+		impulses:     make(map[string]*impulse),
+		lastBySymbol: make(map[string]*impulse),
+		maxWindow:    maxW,
 	}
 }
 
-func (e *Engine) appendTick(tick TickerUpdate) {
-	e.tickUpdates[tick.Symbol] = append(e.tickUpdates[tick.Symbol], tick)
+func sign(pct float64) int {
+	if pct >= 0 {
+		return 1
+	}
+	return -1
 }
 
-func (e *Engine) clearOldTicks(symbol string, now time.Time) {
-	ticks := e.tickUpdates[symbol]
-	if len(ticks) == 0 {
-		return
+// get or create state for symbol (double-check locking)
+func (e *Engine) getState(symbol string) *symbolState {
+	e.statesMu.RLock()
+	st, ok := e.states[symbol]
+	e.statesMu.RUnlock()
+	if ok {
+		return st
 	}
-	cutoff := now.Add(-e.tickMaxAge)
+
+	e.statesMu.Lock()
+	defer e.statesMu.Unlock()
+
+	if st, ok = e.states[symbol]; ok {
+		return st
+	}
+
+	st = &symbolState{
+		points: make([]pricePoint, 0, 128), // prealloc small buffer
+	}
+	e.states[symbol] = st
+	return st
+}
+
+// trim old points without extra allocations
+func (e *Engine) trim(st *symbolState, now time.Time) {
+	cutoff := now.Add(-e.maxWindow)
+
 	i := 0
-	for i < len(ticks) && ticks[i].UpdatedAt.Before(cutoff) {
+	for i < len(st.points) && st.points[i].At.Before(cutoff) {
 		i++
 	}
+
 	if i > 0 {
-		e.tickUpdates[symbol] = append([]TickerUpdate{}, ticks[i:]...)
+		// reuse underlying array (no copy)
+		st.points = st.points[i:]
 	}
-}
 
-type impulseResult struct {
-	changePct float64
-	basePrice float64
-	elapsed   time.Duration
-}
-
-// checkImpulse проверяет один impulse rule для набора тиков.
-//
-// Требует минимум 2 тика — первый тик для символа всегда пропускается.
-// Это намеренно: у нас нет достоверной базы до начала наблюдения,
-// а поля вроде OpenPrice относятся к 24h окну и дают ложные срабатывания.
-//
-// Алгоритм: идём от текущего тика назад.
-// Для каждого кандидата: если он вышел за MaxDuration — break.
-// Если изменение >= ThresholdPct — импульс найден.
-func (e *Engine) checkImpulse(ticks []TickerUpdate, rule ImpulseRule) (found bool, res impulseResult) {
-	// Нужно минимум 2 тика: текущий и хотя бы одна база для сравнения.
-	if len(ticks) < 2 {
+	if len(st.points) == 0 {
 		return
 	}
 
-	current := ticks[len(ticks)-1]
-	currentPrice, err := current.LastPrice.Float64()
-	if err != nil || currentPrice <= 0 {
-		return
-	}
+	// recalc min/max only if needed
+	if st.min.At.Before(cutoff) || st.max.At.Before(cutoff) {
+		min := st.points[0]
+		max := st.points[0]
 
-	for i := len(ticks) - 2; i >= 0; i-- {
-		candidate := ticks[i]
-		dt := current.UpdatedAt.Sub(candidate.UpdatedAt)
-
-		if dt > rule.MaxDuration {
-			break // тик слишком старый, дальше только ещё старее
-		}
-
-		base, err := candidate.LastPrice.Float64()
-		if err != nil || base <= 0 {
-			continue
-		}
-
-		pct := (currentPrice - base) / base * 100
-		if math.Abs(pct) >= rule.ThresholdPct {
-			return true, impulseResult{
-				changePct: pct,
-				basePrice: base,
-				elapsed:   dt,
+		for _, p := range st.points {
+			if p.Price < min.Price {
+				min = p
+			}
+			if p.Price > max.Price {
+				max = p
 			}
 		}
-	}
 
-	return
+		st.min = min
+		st.max = max
+	}
 }
 
-func (e *Engine) Process(tick TickerUpdate, alertChan chan<- Alert, now time.Time) {
-	price, err := tick.LastPrice.Float64()
-	if err != nil || price <= 0 {
-		return
+func (e *Engine) Process(tick BookTickerUpdate, alertChan chan<- Alert, now time.Time) {
+	st := e.getState(tick.Symbol)
+
+	st.mu.Lock()
+
+	p := pricePoint{Price: tick.MidPrice, At: now}
+	st.points = append(st.points, p)
+
+	// init min/max
+	if len(st.points) == 1 {
+		st.min = p
+		st.max = p
 	}
 
-	e.mu.Lock()
-	e.appendTick(tick)
-	e.clearOldTicks(tick.Symbol, now)
-	ticks := e.tickUpdates[tick.Symbol]
+	e.trim(st, now)
 
-	var out []Alert
+	// update extrema
+	if p.Price < st.min.Price {
+		st.min = p
+	}
+	if p.Price > st.max.Price {
+		st.max = p
+	}
+
+	out := make([]Alert, 0, len(e.rules))
+
 	for i, rule := range e.rules {
-		found, res := e.checkImpulse(ticks, rule)
-		if !found {
+		upMove := (p.Price - st.min.Price) / st.min.Price * 100
+		downMove := (p.Price - st.max.Price) / st.max.Price * 100
+
+		var detPct float64
+		var base pricePoint
+		var ok bool
+
+		if upMove >= rule.ThresholdPct {
+			detPct = upMove
+			base = st.min
+			ok = true
+		} else if downMove <= -rule.ThresholdPct {
+			detPct = downMove
+			base = st.max
+			ok = true
+		}
+
+		if !ok {
 			continue
 		}
 
-		key := fmt.Sprintf("%s|%d", tick.Symbol, i)
-		if last, seen := e.cooldown[key]; seen && now.Sub(last) < rule.Cooldown {
-			continue
+		dir := sign(detPct)
+
+		key := tick.Symbol + "|" + strconv.Itoa(i) // faster than Sprintf
+
+		e.impMu.RLock()
+		imp := e.impulses[key]
+		last := e.lastBySymbol[tick.Symbol]
+		e.impMu.RUnlock()
+
+		// ignore opposite impulse inside same window (correction)
+		if last != nil {
+			if now.Sub(last.LastAt) <= rule.MaxDuration*2 && dir != last.Direction {
+				continue
+			}
 		}
-		e.cooldown[key] = now
+
+		sameImpulse := imp != nil &&
+			base.At.Before(imp.LastAt) &&
+			imp.Direction == dir
+
+		if sameImpulse {
+			// only extend if new extreme
+			if sign(p.Price-imp.LastPrice) != dir {
+				continue
+			}
+
+			e.impMu.Lock()
+			imp.LastPrice = p.Price
+			imp.LastAt = now
+			e.impMu.Unlock()
+		} else {
+			newImp := &impulse{
+				ID:         tick.Symbol + "|" + uuid.New().String()[:8],
+				Direction:  dir,
+				StartPrice: base.Price,
+				StartAt:    base.At,
+				LastPrice:  p.Price,
+				LastAt:     now,
+			}
+
+			e.impMu.Lock()
+			e.impulses[key] = newImp
+			e.lastBySymbol[tick.Symbol] = newImp
+			e.impMu.Unlock()
+
+			imp = newImp
+		}
+
+		totalPct := (p.Price - imp.StartPrice) / imp.StartPrice * 100
+		totalElapsed := now.Sub(imp.StartAt)
+
+		arrow := "▲"
+		if totalPct < 0 {
+			arrow = "▼"
+		}
+
+		// build message without fmt.Sprintf (less allocations)
+		msg := tick.Symbol + " " + arrow + " " +
+			strconv.FormatFloat(totalPct, 'f', 2, 64) + "% за " +
+			totalElapsed.Round(time.Millisecond).String() +
+			" mid: " +
+			strconv.FormatFloat(imp.StartPrice, 'f', 6, 64) +
+			" → " +
+			strconv.FormatFloat(p.Price, 'f', 6, 64)
 
 		out = append(out, Alert{
 			Symbol:    tick.Symbol,
+			ImpulseID: imp.ID,
 			Type:      "PRICE_IMPULSE",
-			Message:   buildMessage(tick.Symbol, res, price, rule),
+			Message:   msg,
 			Timestamp: now,
 		})
 	}
-	e.mu.Unlock()
+
+	st.mu.Unlock()
 
 	for _, a := range out {
 		alertChan <- a
 	}
-}
-
-func buildMessage(symbol string, res impulseResult, currentPrice float64, rule ImpulseRule) string {
-	direction := "▲"
-	if res.changePct < 0 {
-		direction = "▼"
-	}
-	return fmt.Sprintf(
-		"%s %s %.2f%% за %s (порог: %.1f%% за %s) цена: %.4f → %.4f",
-		symbol,
-		direction,
-		res.changePct,
-		res.elapsed.Round(time.Millisecond),
-		rule.ThresholdPct,
-		rule.MaxDuration,
-		res.basePrice,
-		currentPrice,
-	)
 }

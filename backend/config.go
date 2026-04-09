@@ -2,14 +2,30 @@ package main
 
 import "time"
 
-// priceSampleRetain — как долго хранить историю тиков.
-// Должен быть >= самого большого MaxDuration среди правил.
-var priceSampleRetain = 5 * time.Minute
-
-// priceImpulseRules — список правил детектирования импульса.
-// Каждое правило независимо: свой порог, окно и cooldown.
-// В будущем можно получать из фронтенда вместо этих констант.
-var priceImpulseRules = []ImpulseRule{
-	{ThresholdPct: 2.0, MaxDuration: 30 * time.Second, Cooldown: 1 * time.Second},
-	// {ThresholdPct: 4.0, MaxDuration: 10 * time.Second, Cooldown: 2 * time.Minute},
+// watchSymbols — список символов для подписки на bookTicker.
+// Все символы должны быть в верхнем регистре (BTCUSDT, ETHUSDT, ...).
+var watchSymbols = []string{
+	"STOUSDT",
+	"SIRENUSDT",
+	"ARIAUSDT",
+	// "ETHUSDT",
+	// "BNBUSDT",
+	// "SOLUSDT",
+	// "XRPUSDT",
 }
+
+// priceImpulseRules — правила обнаружения импульсов.
+// ThresholdPct: минимальное изменение mid-price в процентах.
+// MaxDuration:  временное окно, за которое должно произойти изменение.
+//
+// Это же окно используется для оценки динамики при повторных алертах:
+// повторный алерт отправляется только если от точки последнего алерта
+// цена снова прошла ThresholdPct за MaxDuration.
+var priceImpulseRules = []ImpulseRule{
+	{ThresholdPct: 1.4, MaxDuration: 15 * time.Second},
+	// {ThresholdPct: 1.0, MaxDuration: 5 * time.Second},
+}
+
+// priceSampleRetain — как долго хранить ценовую историю.
+// Должно быть >= максимального MaxDuration среди всех правил + небольшой запас.
+const priceSampleRetain = 2 * time.Minute
