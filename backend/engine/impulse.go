@@ -1,6 +1,9 @@
 package engine
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 type impulse struct {
 	ID         string
@@ -9,6 +12,7 @@ type impulse struct {
 	StartAt    time.Time
 	LastPrice  float64
 	LastAt     time.Time
+	MaxPtc     float64
 }
 
 func sign(pct float64) int {
@@ -33,9 +37,14 @@ func detectMove(p pricePoint, min pricePoint, max pricePoint, threshold float64)
 	return false, 0, pricePoint{}
 }
 
-// check if we continue same impulse
-func isSameImpulse(imp *impulse, base pricePoint, dir int) bool {
-	return imp != nil &&
-		base.At.Before(imp.LastAt) &&
-		imp.Direction == dir
+func shouldContinueImpulse(imp *impulse, p pricePoint, dir int, maxGap time.Duration) bool {
+	if imp == nil || imp.Direction != dir {
+		return false
+	}
+	if p.At.Sub(imp.LastAt) > maxGap {
+		return false
+	}
+
+	progressFromStart := float64(dir) * (p.Price - imp.StartPrice)
+	return progressFromStart > 0 || math.Abs(progressFromStart) < 1e-12
 }
