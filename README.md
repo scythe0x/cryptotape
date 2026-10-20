@@ -25,14 +25,14 @@ the second command writes `build/bin/cryptotape.exe`. all frontend assets and bu
 
 ## releases and updates
 
-pushing a version tag such as `v0.1.4` runs `.github/workflows/release.yml`: frontend/backend checks, a windows build and publication of `cryptotape.exe`. a normal branch push runs checks only; it does not publish a release. publication happens only after the tagged revision passes its checks and builds successfully.
+pushing a version tag such as `v0.1.5` runs `.github/workflows/release.yml`: frontend/backend checks, a windows build and publication of `cryptotape.exe`. a normal branch push runs checks only; it does not publish a release. publication happens only after the tagged revision passes its checks and builds successfully.
 
-for the next release, update `frontend/package.json` and its lockfile with `npm --prefix frontend version 0.1.5 --no-git-tag-version`, then set both version fields in `build/windows/info.json` to `0.1.5`. commit and push those changes before tagging that commit:
+for the next release, update `frontend/package.json` and its lockfile with `npm --prefix frontend version 0.1.6 --no-git-tag-version`, then set both version fields in `build/windows/info.json` to `0.1.6`. commit and push those changes before tagging that commit:
 
 ```sh
 git push origin main
-git tag -a v0.1.5 -m "cryptotape v0.1.5"
-git push origin v0.1.5
+git tag -a v0.1.6 -m "cryptotape v0.1.6"
+git push origin v0.1.6
 ```
 
 use a new matching version each time. the release workflow rejects a tag that differs from the application versions; a failed run does not publish a release.

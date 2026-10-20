@@ -275,8 +275,21 @@ func (s *Store) UpdateTerminal(id int64, status, detail string) error {
 }
 
 func (s *Store) UpdateTerminalContext(ctx context.Context, id int64, status, detail string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE alerts SET terminal_status=?, terminal_error=? WHERE id=?`, status, detail, id)
-	return err
+	return s.UpdateTerminalsContext(ctx, []core.AlertUpdate{{ID: id, TerminalStatus: status, TerminalError: detail}})
+}
+
+func (s *Store) UpdateTerminalsContext(ctx context.Context, updates []core.AlertUpdate) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, update := range updates {
+		if _, err := tx.ExecContext(ctx, `UPDATE alerts SET terminal_status=?, terminal_error=? WHERE id=?`, update.TerminalStatus, update.TerminalError, update.ID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) ListAlerts(ctx context.Context, before int64, limit int) ([]core.Alert, error) {

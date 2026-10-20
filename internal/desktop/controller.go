@@ -54,6 +54,7 @@ type Controller struct {
 	persistenceCtx    context.Context
 	persistenceCancel context.CancelFunc
 	terminalQueues    map[string]chan terminalJob
+	terminalResults   chan core.AlertUpdate
 	terminalWG        sync.WaitGroup
 	terminalErrors    atomic.Uint64
 	traceMu           sync.Mutex
@@ -143,6 +144,7 @@ func (c *Controller) close() error {
 	for _, queue := range c.terminalQueues {
 		close(queue)
 	}
+	close(c.terminalResults)
 	c.terminalWG.Wait()
 	c.tiger.Close()
 	return errors.Join(c.pipelineError, c.audio.Close(), c.store.Close())

@@ -20,6 +20,7 @@ type terminalJob struct {
 }
 
 func (c *Controller) startTerminals() {
+	c.startTerminalResults()
 	c.terminalQueues = make(map[string]chan terminalJob)
 	for terminal, workers := range map[string]int{"vataga": 32, "tiger": 1} {
 		queue := make(chan terminalJob, candidateCapacity)
@@ -101,17 +102,4 @@ func (c *Controller) enqueueAutomatic(alert core.Alert, expires time.Time) {
 			},
 		})
 	}
-}
-
-func (c *Controller) saveTerminalResult(id int64, status, detail string) {
-	if err := c.store.UpdateTerminalContext(c.persistenceCtx, id, status, detail); err != nil {
-		c.queueMu.Lock()
-		c.queueHealth.Error = "save terminal status: " + err.Error()
-		if c.pipelineError == nil {
-			c.pipelineError = err
-		}
-		c.queueMu.Unlock()
-		return
-	}
-	c.emit("alert:update", core.AlertUpdate{ID: id, TerminalStatus: status, TerminalError: detail})
 }
