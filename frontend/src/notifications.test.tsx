@@ -3,11 +3,12 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { applyLanguage } from './i18n'
-import type { Alert, Rule } from './api'
+import type { Alert, Rule, Snapshot } from './api'
 import { Overlay } from './Overlay'
 import { RuleDialog } from './components/RuleDialog'
 import { RulesSettings } from './components/RulesSettings'
 import { ConnectionStatus } from './components/ConnectionStatus'
+import { ProxySettings } from './components/ProxySettings'
 
 const backend = vi.hoisted(() => ({
   call: vi.fn(),
@@ -55,12 +56,13 @@ const alert: Alert = {
   terminalError: '',
 }
 
-const initialSnapshot = () => ({
+const initialSnapshot = (): Snapshot => ({
   rules: [rule],
   alerts: [alert],
   settings: {
     language: 'en',
-    proxy: '',
+    proxies: [],
+    activeProxyId: '',
     cooldownSeconds: 60,
     monitorId: '',
     tigerPort: 7819,
@@ -68,6 +70,7 @@ const initialSnapshot = () => ({
   },
   health: {
     state: 'connected',
+    viaProxy: false,
     detail: 'signals live',
     connections: 4,
     symbols: 749,
@@ -162,7 +165,8 @@ it('saves the language preference in settings', async () => {
   const { SettingsDialog } = await import('./components/SettingsDialog')
   const settings = {
     language: 'en' as const,
-    proxy: '',
+    proxies: [],
+    activeProxyId: '',
     cooldownSeconds: 60,
     monitorId: '',
     tigerPort: 7819,
@@ -336,4 +340,158 @@ it('renders new event notifications and retains only three during a burst', asyn
   for (const id of [13, 14, 15])
     expect(screen.getByRole('button', { name: `open COIN${id}USDT in terminal` })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'open COIN1USDT in terminal' })).toBeNull()
+})
+
+it('creates a proxy with the use checkbox enabled by default and allows opting out', async () => {
+  const user = userEvent.setup()
+  const saved = vi.fn()
+  render(<ProxySettings settings={initialSnapshot().settings} onSaved={saved} />)
+  await user.click(screen.getByRole('button', { name: 'add proxy' }))
+  expect(screen.getByLabelText('name').getAttribute('value')).toBe('proxy-1')
+  const checkbox = screen.getByRole('checkbox', { name: 'use this proxy' })
+  expect(screen.queryByRole('combobox')).toBeNull()
+  expect(checkbox).toHaveProperty('checked', true)
+  await user.type(screen.getByLabelText('ip or hostname'), 'route.example')
+  await user.type(screen.getByLabelText('login'), 'test-user')
+  await user.type(screen.getByLabelText('password'), 'test-password')
+  expect(screen.getByLabelText('password').getAttribute('type')).toBe('password')
+  await user.click(checkbox)
+  await user.click(screen.getByRole('button', { name: 'save proxy' }))
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce())
+  expect(backend.call).toHaveBeenCalledWith(
+    'main.DesktopService.SaveProxy',
+    {
+      id: '',
+      name: 'proxy-1',
+      host: 'route.example',
+      port: 443,
+      protocol: 'http',
+      login: 'test-user',
+      password: 'test-password',
+    },
+    false,
+  )
+})
+
+it('marks only the active proxy card green and restores direct mode on selection', async () => {
+  const user = userEvent.setup()
+  const settings = {
+    ...initialSnapshot().settings,
+    proxies: [
+      {
+        id: 'one',
+        name: 'proxy-1',
+        host: 'localhost',
+        port: 1080,
+        protocol: 'socks5' as const,
+        login: '',
+        password: '',
+      },
+      {
+        id: 'two',
+        name: 'proxy-2',
+        host: 'route.example',
+        port: 443,
+        protocol: 'https' as const,
+        login: '',
+        password: '',
+      },
+    ],
+    activeProxyId: 'two',
+  }
+  const { container } = render(<ProxySettings settings={settings} onSaved={vi.fn()} />)
+  const active = container.querySelectorAll('.proxy-card.is-active')
+  expect(active).toHaveLength(1)
+  expect(active[0].textContent).toContain('proxy-2')
+  await user.click(screen.getByRole('button', { name: 'no proxy' }))
+  expect(backend.call).toHaveBeenCalledWith('main.DesktopService.SelectProxy', '')
+})
+
+it('shows inactive proxy checkbox as unchecked and enables it on save', async () => {
+  const user = userEvent.setup()
+  const settings = {
+    ...initialSnapshot().settings,
+    proxies: [
+      {
+        id: 'one',
+        name: 'proxy-1',
+        host: 'localhost',
+        port: 1080,
+        protocol: 'socks5' as const,
+        login: '',
+        password: '',
+      },
+    ],
+    activeProxyId: '',
+  }
+  render(<ProxySettings settings={settings} onSaved={vi.fn()} />)
+  await user.click(screen.getByRole('button', { name: /proxy-1/ }))
+  const checkbox = screen.getByRole('checkbox', { name: 'use this proxy' })
+  expect(checkbox).toHaveProperty('checked', false)
+  await user.click(checkbox)
+  await user.click(screen.getByRole('button', { name: 'save proxy' }))
+  await waitFor(() =>
+    expect(backend.call).toHaveBeenCalledWith('main.DesktopService.SaveProxy', settings.proxies[0], true),
+  )
+})
+
+it('offers manual reconnect for both exchange and proxy failures', async () => {
+  const user = userEvent.setup()
+  const { rerender } = render(<ConnectionStatus health={{ ...initialSnapshot().health, state: 'error' }} />)
+  await user.click(screen.getByRole('button', { name: 'reconnect' }))
+  expect(backend.call).toHaveBeenCalledWith('main.DesktopService.Reconnect')
+  rerender(<ConnectionStatus health={{ ...initialSnapshot().health, state: 'error', viaProxy: true }} />)
+  expect(screen.getByText('proxy connection unavailable')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'reconnect' })).toBeTruthy()
+})
+
+it('fills a proxy from pasted details and saves it enabled by default', async () => {
+  const user = userEvent.setup()
+  render(<ProxySettings settings={initialSnapshot().settings} onSaved={vi.fn()} />)
+  await user.click(screen.getByRole('button', { name: 'add proxy' }))
+  await user.click(screen.getByLabelText('ip or hostname'))
+  await user.paste('route.example : 443\nЛогин: test-user\nПароль: test-password')
+  expect(screen.getByLabelText('ip or hostname').getAttribute('value')).toBe('route.example')
+  expect(screen.getByLabelText('login').getAttribute('value')).toBe('test-user')
+  expect(screen.getByLabelText('password').getAttribute('value')).toBe('test-password')
+  await user.click(screen.getByRole('button', { name: 'save proxy' }))
+  await waitFor(() =>
+    expect(backend.call).toHaveBeenCalledWith(
+      'main.DesktopService.SaveProxy',
+      {
+        id: '',
+        name: 'proxy-1',
+        host: 'route.example',
+        port: 443,
+        protocol: 'http',
+        login: 'test-user',
+        password: 'test-password',
+      },
+      true,
+    ),
+  )
+})
+
+it('uses local SOCKS automatically when credentials are empty', async () => {
+  const user = userEvent.setup()
+  render(<ProxySettings settings={initialSnapshot().settings} onSaved={vi.fn()} />)
+  await user.click(screen.getByRole('button', { name: 'add proxy' }))
+  await user.click(screen.getByLabelText('ip or hostname'))
+  await user.paste('127.0.0.1:1080')
+  await user.click(screen.getByRole('button', { name: 'save proxy' }))
+  await waitFor(() =>
+    expect(backend.call).toHaveBeenCalledWith(
+      'main.DesktopService.SaveProxy',
+      {
+        id: '',
+        name: 'proxy-1',
+        host: '127.0.0.1',
+        port: 1080,
+        protocol: 'socks5',
+        login: '',
+        password: '',
+      },
+      true,
+    ),
+  )
 })

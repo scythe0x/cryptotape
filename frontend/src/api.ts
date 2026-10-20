@@ -18,9 +18,22 @@ export const ruleSchema = z.object({
 
 export const languageSchema = z.enum(['en', 'ru'])
 
+export const proxyProtocolSchema = z.enum(['http', 'https', 'socks5'])
+export const proxySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  host: z.string(),
+  port: z.number(),
+  protocol: proxyProtocolSchema,
+  login: z.string(),
+  password: z.string(),
+})
+export type ProxyProfile = z.infer<typeof proxySchema>
+
 export const settingsSchema = z.object({
   language: languageSchema,
-  proxy: z.string(),
+  proxies: z.array(proxySchema),
+  activeProxyId: z.string(),
   cooldownSeconds: z.number(),
   monitorId: z.string(),
   tigerPort: z.number(),
@@ -48,6 +61,7 @@ export const alertSchema = z.object({
 })
 
 export const healthSchema = z.object({
+  viaProxy: z.boolean(),
   state: z.string(),
   detail: z.string(),
   connections: z.number(),
@@ -93,12 +107,17 @@ export const desktop = {
   saveRule: (rule: Rule) => invoke('SaveRule', ruleSchema, rule),
   deleteRule: (id: number) => command('DeleteRule', id),
   saveSettings: (settings: Settings) => command('SaveSettings', settings),
-  testProxy: (proxy: string) => command('TestProxy', proxy),
+  saveProxy: (profile: ProxyProfile, use: boolean) => command('SaveProxy', profile, use),
+  selectProxy: (id: string) => command('SelectProxy', id),
+  deleteProxy: (id: string) => command('DeleteProxy', id),
+  reconnect: () => command('Reconnect'),
   listAlerts: (before: number, limit = 100) => invoke('ListAlerts', z.array(alertSchema), before, limit),
   alertsAfter: (after: number, limit = 200) => invoke('AlertsAfter', z.array(alertSchema), after, limit),
   sessionAlerts: () => invoke('SessionAlerts', z.array(alertSchema)),
-  openTerminal: (id: number, symbol: string, terminal: TerminalID) => command('OpenTerminal', id, symbol, terminal),
-  openTerminals: (id: number, symbol: string, terminals: TerminalID[]) => invoke('OpenTerminals', z.object({ opened: z.number(), error: z.string() }), id, symbol, terminals),
+  openTerminal: (id: number, symbol: string, terminal: TerminalID) =>
+    command('OpenTerminal', id, symbol, terminal),
+  openTerminals: (id: number, symbol: string, terminals: TerminalID[]) =>
+    invoke('OpenTerminals', z.object({ opened: z.number(), error: z.string() }), id, symbol, terminals),
   copySymbol: (symbol: string) => Clipboard.SetText(symbol),
   soundIds: () => invoke('SoundIDs', z.array(z.string())),
   importSound: (name: string, extension: string, encoded: string) =>
@@ -138,8 +157,14 @@ function alertBatches(handle: (alerts: Alert[], updates: AlertUpdate[]) => void)
     fallback = window.setTimeout(flush, 50)
   }
 
-  const stopNew = listen('alert:new', alertSchema, (alert) => { pending.set(alert.id, alert); schedule() })
-  const stopUpdate = listen('alert:update', alertUpdateSchema, (update) => { updates.set(update.id, update); schedule() })
+  const stopNew = listen('alert:new', alertSchema, (alert) => {
+    pending.set(alert.id, alert)
+    schedule()
+  })
+  const stopUpdate = listen('alert:update', alertUpdateSchema, (update) => {
+    updates.set(update.id, update)
+    schedule()
+  })
   return () => {
     stopNew()
     stopUpdate()

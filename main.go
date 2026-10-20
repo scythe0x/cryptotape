@@ -53,8 +53,20 @@ func (s *DesktopService) SaveSettings(settings core.Settings) error {
 	return nil
 }
 
-func (s *DesktopService) TestProxy(proxy string) error {
-	return s.controller.TestProxy(proxy)
+func (s *DesktopService) SaveProxy(profile core.ProxyProfile, use bool) error {
+	return s.controller.SaveProxy(profile, use)
+}
+
+func (s *DesktopService) SelectProxy(id string) error {
+	return s.controller.SelectProxy(id)
+}
+
+func (s *DesktopService) DeleteProxy(id string) error {
+	return s.controller.DeleteProxy(id)
+}
+
+func (s *DesktopService) Reconnect() {
+	s.controller.Reconnect()
 }
 
 func (s *DesktopService) ListAlerts(before int64, limit int) ([]core.Alert, error) {

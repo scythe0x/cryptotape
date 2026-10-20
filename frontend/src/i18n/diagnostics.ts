@@ -1,6 +1,10 @@
 import i18n, { type TranslationKey } from './index'
 
 const messages: Record<string, TranslationKey> = {
+  'invalid proxy profile': 'invalidProxyProfile',
+  'unknown proxy profile': 'unknownProxyProfile',
+  'proxy connection failed': 'proxyConnectionFailed',
+  'binance connection failed': 'binanceDisconnected',
   initializing: 'initializing',
   'loading symbols and turnover': 'loadingMarket',
   'opening market streams': 'openingStreams',
@@ -65,7 +69,8 @@ export function localizeDiagnostic(raw: string): string {
       return `${terminal === 'vataga' ? 'Vataga' : 'Tiger'}: ${localizeDiagnostic(message.slice(terminal.length + 2))}`
   }
   if (message.startsWith('failed to ')) {
-    if (message.endsWith('EOF') || message.endsWith('use of closed network connection')) return i18n.t('socketClosed')
+    if (message.endsWith('EOF') || message.endsWith('use of closed network connection'))
+      return i18n.t('socketClosed')
     if (message.endsWith('context deadline exceeded')) return i18n.t('deadlineExceeded')
   }
   const key = messages[message]

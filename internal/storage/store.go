@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -159,8 +159,31 @@ func (s *Store) Settings() (core.Settings, error) {
 		return settings, err
 	}
 	settings = core.DefaultSettings()
-	err := json.Unmarshal([]byte(payload), &settings)
-	return settings, err
+	if err := json.Unmarshal([]byte(payload), &settings); err != nil {
+		return settings, err
+	}
+	if settings.Proxies == nil {
+		settings.Proxies = []core.ProxyProfile{}
+	}
+	var legacy struct {
+		Proxy string `json:"proxy"`
+	}
+	if err := json.Unmarshal([]byte(payload), &legacy); err != nil {
+		return settings, err
+	}
+	if legacy.Proxy != "" && len(settings.Proxies) == 0 {
+		endpoint, err := url.Parse("http://" + legacy.Proxy)
+		if err != nil {
+			return settings, errors.New("invalid legacy proxy")
+		}
+		port, err := strconv.Atoi(endpoint.Port())
+		if err != nil {
+			return settings, errors.New("invalid legacy proxy")
+		}
+		settings.Proxies = []core.ProxyProfile{{ID: "legacy", Name: "proxy-1", Host: endpoint.Hostname(), Port: port, Protocol: "http"}}
+		settings.ActiveProxyID = "legacy"
+	}
+	return settings, nil
 }
 
 func (s *Store) SaveSettings(settings core.Settings) error {
@@ -173,12 +196,8 @@ func (s *Store) SaveSettings(settings core.Settings) error {
 	if settings.TigerPort < 1 || settings.TigerPort > 65535 || !validLinkGroup.MatchString(settings.TigerLinkGroup) {
 		return errors.New("invalid Tiger port or link group")
 	}
-	if settings.Proxy != "" {
-		host, port, err := net.SplitHostPort(settings.Proxy)
-		portNumber, portErr := strconv.Atoi(port)
-		if err != nil || net.ParseIP(host) == nil || portErr != nil || portNumber < 1 || portNumber > 65535 {
-			return errors.New("proxy must be ip:port")
-		}
+	if err := core.ValidateProxies(settings); err != nil {
+		return err
 	}
 	payload, err := json.Marshal(settings)
 	if err != nil {

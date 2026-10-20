@@ -15,16 +15,17 @@ type Rule struct {
 }
 
 type Settings struct {
-	Language        string `json:"language"`
-	Proxy           string `json:"proxy"`
-	CooldownSeconds int    `json:"cooldownSeconds"`
-	MonitorID       string `json:"monitorId"`
-	TigerPort       int    `json:"tigerPort"`
-	TigerLinkGroup  string `json:"tigerLinkGroup"`
+	Language        string         `json:"language"`
+	Proxies         []ProxyProfile `json:"proxies"`
+	ActiveProxyID   string         `json:"activeProxyId"`
+	CooldownSeconds int            `json:"cooldownSeconds"`
+	MonitorID       string         `json:"monitorId"`
+	TigerPort       int            `json:"tigerPort"`
+	TigerLinkGroup  string         `json:"tigerLinkGroup"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{Language: "ru", CooldownSeconds: 60, TigerPort: 7819, TigerLinkGroup: "A"}
+	return Settings{Proxies: []ProxyProfile{}, Language: "ru", CooldownSeconds: 60, TigerPort: 7819, TigerLinkGroup: "A"}
 }
 
 type Quote struct {
@@ -68,6 +69,7 @@ type Alert struct {
 }
 
 type Health struct {
+	ViaProxy    bool   `json:"viaProxy"`
 	PingMs      *int64 `json:"pingMs"`
 	State       string `json:"state"`
 	Detail      string `json:"detail"`

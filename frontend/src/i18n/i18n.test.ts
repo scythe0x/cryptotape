@@ -19,7 +19,7 @@ vi.mock('@wailsio/runtime', () => ({
 }))
 const settings = (language: 'en' | 'ru'): Settings => ({
   language,
-  proxy: '',
+  proxies: [], activeProxyId: '',
   cooldownSeconds: 60,
   monitorId: '',
   tigerPort: 7819,

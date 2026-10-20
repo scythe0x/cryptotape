@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"sort"
@@ -61,13 +60,17 @@ func NewFeed(proxy string, minVolume float64, cb Callbacks) (*Feed, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
 	if proxy != "" {
-		proxyURL, err := url.Parse("http://" + proxy)
+		address := proxy
+		if !strings.Contains(address, "://") {
+			address = "http://" + address
+		}
+		proxyURL, err := url.Parse(address)
 		if err != nil {
 			return nil, err
 		}
 		transport.Proxy = http.ProxyURL(proxyURL)
 	}
-	return &Feed{minVolume: minVolume, client: &http.Client{Transport: transport}, cb: cb}, nil
+	return &Feed{minVolume: minVolume, client: &http.Client{Transport: transport, Timeout: 8 * time.Second}, cb: cb}, nil
 }
 
 func (f *Feed) Test(ctx context.Context) error {
@@ -91,8 +94,9 @@ func (f *Feed) Test(ctx context.Context) error {
 }
 
 func (f *Feed) Run(ctx context.Context) error {
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	defer f.client.CloseIdleConnections()
+	runCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	f.status("connecting", "loading symbols and turnover")
 	if err := f.syncClock(runCtx); err != nil {
 		f.status("error", err.Error())
@@ -137,19 +141,23 @@ func (f *Feed) Run(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		f.volumeLoop(runCtx)
+		if err := f.volumeLoop(runCtx); err != nil {
+			cancel(err)
+		}
 	}()
 	select {
 	case <-f.volumeReady:
 	case <-runCtx.Done():
 		wg.Wait()
-		return runCtx.Err()
+		return context.Cause(runCtx)
 	}
 	for shard := 0; shard < f.shards; shard++ {
 		wg.Add(1)
 		go func(shard int) {
 			defer wg.Done()
-			f.bookLoop(runCtx, shard)
+			if err := f.bookLoop(runCtx, shard); err != nil {
+				cancel(err)
+			}
 		}(shard)
 	}
 	wg.Add(1)
@@ -163,14 +171,15 @@ func (f *Feed) Run(ctx context.Context) error {
 				return
 			case <-ticker.C:
 				if err := f.refresh(runCtx); err != nil {
-					f.status("degraded", "market refresh: "+err.Error())
+					cancel(err)
+					return
 				}
 			}
 		}
 	}()
 	wg.Wait()
 
-	return ctx.Err()
+	return context.Cause(runCtx)
 }
 
 func (f *Feed) syncClock(ctx context.Context) error {
@@ -251,27 +260,20 @@ func (f *Feed) get(ctx context.Context, path string, out any) error {
 	return json.NewDecoder(io.LimitReader(response.Body, 8<<20)).Decode(out)
 }
 
-func (f *Feed) bookLoop(ctx context.Context, shard int) {
-	backoff := time.Second
-	for ctx.Err() == nil {
+func (f *Feed) bookLoop(ctx context.Context, shard int) error {
+	return RetryConnection(ctx, func() (bool, error) {
 		f.mu.Lock()
 		members := append([]string(nil), f.shardMembers[shard]...)
 		f.mu.Unlock()
 		f.cb.Gap(members)
-		connectedAt := time.Now()
-		err := f.readBook(ctx, shard)
-		if ctx.Err() != nil {
-			return
+		return f.readBook(ctx, shard)
+	}, func(err error, retry bool) {
+		state := "error"
+		if retry {
+			state = "reconnecting"
 		}
-		f.status("reconnecting", fmt.Sprintf("book stream: %v", err))
-		if time.Since(connectedAt) > time.Minute {
-			backoff = time.Second
-		}
-		if !pause(ctx, backoff) {
-			return
-		}
-		backoff = min(backoff*2, 30*time.Second)
-	}
+		f.status(state, "book stream: "+err.Error())
+	})
 }
 
 type bookTick struct {
@@ -285,16 +287,16 @@ type bookTick struct {
 	Trade  int64  `json:"T"`
 }
 
-func (f *Feed) readBook(ctx context.Context, shard int) error {
+func (f *Feed) readBook(ctx context.Context, shard int) (healthy bool, result error) {
 	connection, _, err := websocket.Dial(ctx, wsPublic, &websocket.DialOptions{HTTPClient: f.client})
 	if err != nil {
-		return err
+		return healthy, err
 	}
 	defer connection.CloseNow()
 	connection.SetReadLimit(2 << 20)
 	subscribed := f.desiredStreams(shard)
 	if err := writeSubscription(ctx, connection, "SUBSCRIBE", subscribed, 1); err != nil {
-		return err
+		return healthy, err
 	}
 	f.connection(1)
 	defer f.connection(-1)
@@ -306,7 +308,7 @@ func (f *Feed) readBook(ctx context.Context, shard int) error {
 		// empty shards can be idle; ping/pong checks transport liveness.
 		_, raw, err := connection.Read(ctx)
 		if err != nil {
-			return err
+			return healthy, err
 		}
 		var envelope struct {
 			Data json.RawMessage `json:"data"`
@@ -339,37 +341,32 @@ func (f *Feed) readBook(ctx context.Context, shard int) error {
 		}
 		eventTime := time.UnixMilli(event).Add(-time.Duration(f.clockOffset.Load()))
 		if received.Sub(eventTime) > 10*time.Second || eventTime.After(received.Add(2*time.Second)) {
-			return fmt.Errorf("stale book stream: %s event age %s", tick.Symbol, received.Sub(eventTime))
+			return healthy, fmt.Errorf("stale book stream: %s event age %s", tick.Symbol, received.Sub(eventTime))
 		}
+		healthy = true
 		f.cb.Quote(core.Quote{Symbol: tick.Symbol, Bid: bid, Ask: ask, EventTime: eventTime, Received: received})
 	}
 }
 
-func (f *Feed) volumeLoop(ctx context.Context) {
-	backoff := time.Second
-	for ctx.Err() == nil {
-		connectedAt := time.Now()
-		err := f.readVolume(ctx)
+func (f *Feed) volumeLoop(ctx context.Context) error {
+	return RetryConnection(ctx, func() (bool, error) {
+		healthy, err := f.readVolume(ctx)
 		f.volumeOK.Store(false)
 		f.cb.Gap(nil)
-		if ctx.Err() != nil {
-			return
+		return healthy, err
+	}, func(err error, retry bool) {
+		state := "error"
+		if retry {
+			state = "reconnecting"
 		}
-		f.status("reconnecting", fmt.Sprintf("volume stream: %v", err))
-		if time.Since(connectedAt) > time.Minute {
-			backoff = time.Second
-		}
-		if !pause(ctx, backoff) {
-			return
-		}
-		backoff = min(backoff*2, 30*time.Second)
-	}
+		f.status(state, "volume stream: "+err.Error())
+	})
 }
 
-func (f *Feed) readVolume(ctx context.Context) error {
+func (f *Feed) readVolume(ctx context.Context) (healthy bool, result error) {
 	connection, _, err := websocket.Dial(ctx, wsMarket+"?streams=!miniTicker@arr", &websocket.DialOptions{HTTPClient: f.client})
 	if err != nil {
-		return err
+		return healthy, err
 	}
 	defer connection.CloseNow()
 	connection.SetReadLimit(8 << 20)
@@ -382,7 +379,7 @@ func (f *Feed) readVolume(ctx context.Context) error {
 		_, raw, err := connection.Read(readCtx)
 		cancel()
 		if err != nil {
-			return err
+			return healthy, err
 		}
 		var envelope struct {
 			Data json.RawMessage `json:"data"`
@@ -402,7 +399,7 @@ func (f *Feed) readVolume(ctx context.Context) error {
 		if len(ticks) > 0 {
 			eventTime := time.UnixMilli(ticks[0].Event).Add(-time.Duration(f.clockOffset.Load()))
 			if ticks[0].Event > 0 && time.Since(eventTime) > 10*time.Second {
-				return fmt.Errorf("stale volume stream: %s", time.Since(eventTime))
+				return healthy, fmt.Errorf("stale volume stream: %s", time.Since(eventTime))
 			}
 		}
 		values := make(map[string]float64, len(ticks))
@@ -411,6 +408,7 @@ func (f *Feed) readVolume(ctx context.Context) error {
 				values[tick.Symbol] = volume
 			}
 		}
+		healthy = true
 		f.cb.Volume(values)
 		f.updateEligibility(values)
 	}
@@ -569,8 +567,7 @@ func pingUntilDone(ctx context.Context, connection *websocket.Conn, report func(
 }
 
 func pause(ctx context.Context, duration time.Duration) bool {
-	delay := duration + time.Duration(rand.Int63n(int64(duration/2)+1))
-	timer := time.NewTimer(delay)
+	timer := time.NewTimer(duration)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():

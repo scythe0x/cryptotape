@@ -101,7 +101,7 @@ func TestBookStreamDecodesAndFiltersRealFrames(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			err = feed.readBook(ctx, 0)
+			_, err = feed.readBook(ctx, 0)
 			if test.wantStale && (err == nil || !strings.Contains(err.Error(), "stale book stream")) {
 				t.Fatalf("unsafe event was not rejected: %v", err)
 			}

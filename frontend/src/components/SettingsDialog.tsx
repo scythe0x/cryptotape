@@ -9,6 +9,7 @@ import { HelpTip } from './HelpTip'
 import { useTranslation } from '../i18n'
 import { localizeDiagnostic } from '../i18n/diagnostics'
 import { RulesSettings } from './RulesSettings'
+import { ProxySettings } from './ProxySettings'
 
 type Props = {
   open: boolean
@@ -38,7 +39,6 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
   const [monitors, setMonitors] = useState<Monitor[]>([])
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -47,19 +47,6 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
       .then(setMonitors)
       .catch((error: unknown) => setMessage(String(error)))
   }, [open])
-
-  async function testProxy() {
-    setTesting(true)
-    setMessage('testing Binance route…')
-    try {
-      await desktop.testProxy(draft.proxy)
-      setMessage('Binance connection is working')
-    } catch (error) {
-      setMessage(`connection failed: ${String(error)}`)
-    } finally {
-      setTesting(false)
-    }
-  }
 
   async function save(event: React.FormEvent) {
     event.preventDefault()
@@ -89,10 +76,14 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
       <Tabs.Root defaultValue="alerts">
         <Tabs.List className="settings-tabs" aria-label={t('settingsSections')}>
           <Tabs.Trigger value="alerts">{t('alerts')}</Tabs.Trigger>
+          <Tabs.Trigger value="proxies">{t('proxies')}</Tabs.Trigger>
           <Tabs.Trigger value="general">{t('general')}</Tabs.Trigger>
         </Tabs.List>
         <Tabs.Content value="alerts" className="settings-tab-content">
           <RulesSettings rules={rules} sounds={sounds} onSaved={onSaved} />
+        </Tabs.Content>
+        <Tabs.Content value="proxies">
+          <ProxySettings settings={settings} onSaved={onSaved} />
         </Tabs.Content>
         <Tabs.Content value="general">
           <form onSubmit={save} className="form-stack">
@@ -101,25 +92,13 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
               <select
                 className="input"
                 value={draft.language}
-                onChange={(event) => setDraft({ ...draft, language: languageSchema.parse(event.target.value) })}
+                onChange={(event) =>
+                  setDraft({ ...draft, language: languageSchema.parse(event.target.value) })
+                }
               >
                 <option value="en">English</option>
                 <option value="ru">Русский</option>
               </select>
-            </label>
-            <label>
-              {t('proxy')}
-              <div className="input-row">
-                <Input
-                  value={draft.proxy}
-                  disabled={testing}
-                  placeholder={t('proxyPlaceholder')}
-                  onChange={(event) => setDraft({ ...draft, proxy: event.target.value })}
-                />
-                <Button type="button" disabled={testing} onClick={() => void testProxy()}>
-                  {testing ? t('testing') : t('test')}
-                </Button>
-              </div>
             </label>
             <div className="cooldown-field">
               <div className="label-with-help">
@@ -182,7 +161,9 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
               </select>
             </label>
             {message && (
-              <div className={message.includes('failed') ? 'inline-error' : 'muted'}>{localizeDiagnostic(message)}</div>
+              <div className={message.includes('failed') ? 'inline-error' : 'muted'}>
+                {localizeDiagnostic(message)}
+              </div>
             )}
             <div className="dialog-actions">
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>

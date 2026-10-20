@@ -36,13 +36,13 @@ download the exe and run it. to update, close cryptotape and replace the old exe
 - emits the first crossing up or down per symbol and rule. a cooldown suppresses continuations and rebounds without producing a delayed signal at its end.
 - persists an alert before the overlay, sound, or optional local terminal request. the terminal route is `POST http://localhost:5005/api/open/zenica/binance/F/{SYMBOL}` and never uses the Binance proxy.
 - keeps one native sound playing: each new alert stops the previous sound. every alert with auto-open enabled sends its own terminal request.
-- reconnects with backoff. stale quotes and lost connections reset the affected window; alerts use the available fresh history immediately, without waiting for a full window. movement across a connection gap is never inferred. the UI reads missed alerts by SQLite cursor.
+- reconnects after 1, 2, 4 and 8 seconds, then waits for manual reconnect. a session with fresh data that stays connected for a minute resets the retry budget. stale quotes and lost connections reset the affected window; alerts use the available fresh history immediately, without waiting for a full window. movement across a connection gap is never inferred. the UI reads missed alerts by SQLite cursor.
 
 each rule has a badge color, a volume from 0 to 100%, its own turnover floor, and independent Vataga/Tiger auto-open choices. rules are always active; delete a rule from its editor to remove it. custom mp3/wav import lives in the sound selector.
 
 the main window contains connection status and the virtualized alert feed. rule management lives in settings. bursts are batched per frame without discarding history; notifications retain the latest three cards. reading older alerts keeps the scroll position, with a button to jump to new ones. animations respect reduced-motion preferences.
 
-settings are stored in the user's application config directory (`cryptotape/cryptotape.sqlite`), with imported sounds alongside it. the proxy accepts an HTTP CONNECT endpoint as `ip:port` and is applied to both Binance REST and WebSocket traffic. there is no direct-route fallback.
+settings are stored in the user's application config directory (`cryptotape/cryptotape.sqlite`), with imported sounds alongside it. the proxy settings tab stores named profiles with host, port and optional credentials. the protocol is inferred: local unauthenticated proxies use SOCKS5, authenticated upstream proxies use HTTP CONNECT. direct routing is selected by default; a new profile is activated only when its checked-by-default "use this proxy" checkbox is left checked. saving an inactive profile does not change the selected route. selected proxies apply to both Binance REST and websocket traffic; terminal requests stay direct. there is no automatic direct-route fallback. a shadowsocks client can expose its local SOCKS5 port; raw shadowsocks encrypted endpoints are not supported by an ip/port alone.
 
 ## checks
 

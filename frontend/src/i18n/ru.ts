@@ -1,6 +1,24 @@
 import type { en } from './en'
 
 export const ru = {
+  proxies: 'прокси',
+  noProxy: 'без прокси',
+  addProxy: 'добавить прокси',
+  editProxy: 'настройка прокси',
+  saveProxy: 'сохранить',
+  proxyHost: 'ip или домен',
+  proxyPort: 'порт',
+  proxyLogin: 'логин',
+  proxyPassword: 'пароль',
+  useProxy: 'использовать это прокси',
+  proxyDescription: 'подключение к Binance через выбранный прокси',
+  proxyUnavailable: 'нет соединения через прокси',
+  proxyConnecting: 'подключение через прокси',
+  reconnect: 'переподключить',
+  invalidProxyProfile: 'проверьте адрес, порт и данные входа прокси',
+  unknownProxyProfile: 'прокси не найден. откройте список заново',
+  proxyConnectionFailed:
+    'прокси не работает или не соединяет с Binance. проверьте адрес, порт, логин и пароль',
   settings: 'настройки',
   alerts: 'алерты',
   general: 'основные',
