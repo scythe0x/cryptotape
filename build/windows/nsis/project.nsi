@@ -3,7 +3,7 @@ Unicode true
 !define INFO_PROJECTNAME "cryptotape"
 !define INFO_COMPANYNAME "cryptotape"
 !define INFO_PRODUCTNAME "cryptotape"
-!define INFO_PRODUCTVERSION "0.1.1"
+!define INFO_PRODUCTVERSION "0.1.2"
 !define INFO_COPYRIGHT "cryptotape"
 !define WAILS_INSTALL_SCOPE "user"
 

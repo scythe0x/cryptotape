@@ -66,7 +66,12 @@ func TestEligibilityChangesUseCurrentTurnover(t *testing.T) {
 
 func TestPingReportsRoundTripAndStopsOnCancellation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		connection, err := websocket.Accept(w, r, nil)
+		connection, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			OnPingReceived: func(context.Context, []byte) bool {
+				time.Sleep(80 * time.Millisecond)
+				return true
+			},
+		})
 		if err != nil {
 			return
 		}
@@ -90,7 +95,7 @@ func TestPingReportsRoundTripAndStopsOnCancellation(t *testing.T) {
 	}()
 	select {
 	case elapsed := <-reports:
-		if elapsed <= 0 {
+		if elapsed < 40*time.Millisecond {
 			t.Fatalf("invalid RTT: %s", elapsed)
 		}
 	case <-time.After(2 * time.Second):
