@@ -10,6 +10,7 @@ import { useTranslation } from './i18n'
 import { localizeDiagnostic } from './i18n/diagnostics'
 import { syncLanguage } from './i18n/language'
 import { notificationCards } from './alerts'
+import { useAlertRendered } from './useAlertRendered'
 
 export function Overlay() {
   const { t } = useTranslation()
@@ -44,6 +45,8 @@ export function Overlay() {
       stopRules()
     }
   }, [])
+
+  useAlertRendered(cards.map((card) => card.id), 'overlay')
 
   function close(id: number) {
     dismissed.current.add(id)

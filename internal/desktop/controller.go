@@ -26,19 +26,43 @@ type Controller struct {
 	feed     *binance.Feed
 	emit     EventSink
 
-	healthMu   sync.Mutex
-	settingsMu sync.Mutex
-	mu         sync.RWMutex
-	rules      []core.Rule
-	settings   core.Settings
-	health     core.Health
-	cancel     context.CancelFunc
-	stop       context.CancelFunc
-	root       context.Context
-	launchID   int64
-	version    atomic.Uint64
-	feedWG     sync.WaitGroup
-	actionWG   sync.WaitGroup
+	healthMu          sync.Mutex
+	settingsMu        sync.Mutex
+	mu                sync.RWMutex
+	rules             []core.Rule
+	settings          core.Settings
+	health            core.Health
+	cancel            context.CancelFunc
+	stop              context.CancelFunc
+	root              context.Context
+	launchID          int64
+	version           atomic.Uint64
+	feedWG            sync.WaitGroup
+	actionWG          sync.WaitGroup
+	pipelineMu        sync.RWMutex
+	closing           bool
+	candidates        chan queuedCandidate
+	notifications     chan core.Alert
+	pipelineWG        sync.WaitGroup
+	queueMu           sync.Mutex
+	pending           map[uint64]time.Time
+	sequence          atomic.Uint64
+	queueHealth       core.QueueHealth
+	pipelineError     error
+	closeOnce         sync.Once
+	closeError        error
+	persistenceCtx    context.Context
+	persistenceCancel context.CancelFunc
+	terminalQueues    map[string]chan terminalJob
+	terminalWG        sync.WaitGroup
+	terminalErrors    atomic.Uint64
+	traceMu           sync.Mutex
+	traces            map[int64]*alertTrace
+	traceOrder        []int64
+	traceCursor       int
+	terminalWaitMs    atomic.Int64
+	terminalRequestMs atomic.Int64
+	renderDelayMs     atomic.Int64
 }
 
 func NewController(path string, emit EventSink) (*Controller, error) {
@@ -74,6 +98,7 @@ func NewController(path string, emit EventSink) (*Controller, error) {
 	if len(latest) > 0 {
 		controller.launchID = latest[0].ID
 	}
+	controller.startPipeline()
 	return controller, nil
 }
 
@@ -92,6 +117,11 @@ func (c *Controller) Start(ctx context.Context) {
 }
 
 func (c *Controller) Close() error {
+	c.closeOnce.Do(func() { c.closeError = c.close() })
+	return c.closeError
+}
+
+func (c *Controller) close() error {
 	c.mu.Lock()
 	if c.stop != nil {
 		c.stop()
@@ -101,9 +131,21 @@ func (c *Controller) Close() error {
 	}
 	c.mu.Unlock()
 	c.feedWG.Wait()
+	c.pipelineMu.Lock()
+	c.closing = true
+	close(c.candidates)
+	c.pipelineMu.Unlock()
+	drainTimer := time.AfterFunc(15*time.Second, c.persistenceCancel)
+	defer drainTimer.Stop()
+	defer c.persistenceCancel()
+	c.pipelineWG.Wait()
 	c.actionWG.Wait()
+	for _, queue := range c.terminalQueues {
+		close(queue)
+	}
+	c.terminalWG.Wait()
 	c.tiger.Close()
-	return errors.Join(c.audio.Close(), c.store.Close())
+	return errors.Join(c.pipelineError, c.audio.Close(), c.store.Close())
 }
 
 func (c *Controller) GetSnapshot() (core.Snapshot, error) {
@@ -189,26 +231,25 @@ func (c *Controller) SessionAlerts() ([]core.Alert, error) {
 }
 
 func (c *Controller) onQuote(quote core.Quote) {
+	c.pipelineMu.RLock()
+	defer c.pipelineMu.RUnlock()
+	if c.closing {
+		return
+	}
 	for _, candidate := range c.engine.Process(quote) {
-		alert, err := c.store.InsertAlert(candidate)
-		if err != nil {
-			c.setHealth(core.Health{State: "error", Detail: "alert storage: " + err.Error(), UpdatedAtMs: time.Now().UnixMilli()})
-			return
-		}
-		c.emit("alert:new", alert)
+		job := queuedCandidate{candidate: candidate, id: c.sequence.Add(1), queued: time.Now()}
 		c.actionWG.Add(1)
-		go func() {
-			defer c.actionWG.Done()
-			if err := c.audio.PlayAlert(alert.ID, alert.Sound, alert.Volume); err != nil {
-				slog.Error("play alert", "error", err)
-			}
-		}()
-		if len(alert.Terminals) > 0 {
-			c.actionWG.Add(1)
-			go func() {
-				defer c.actionWG.Done()
-				c.openAutomatically(alert)
-			}()
+		c.queueMu.Lock()
+		c.pending[job.id] = job.queued
+		select {
+		case c.candidates <- job:
+		default:
+			delete(c.pending, job.id)
+			c.queueHealth.Unsaved++
+			c.queueHealth.Error = "alert storage queue overflow"
+			c.pipelineError = errors.New(c.queueHealth.Error)
+			c.actionWG.Done()
 		}
+		c.queueMu.Unlock()
 	}
 }

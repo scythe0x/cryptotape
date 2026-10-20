@@ -31,7 +31,12 @@ func RetryConnection(ctx context.Context, connect func() (bool, error), failed f
 		if !retry {
 			return errors.Join(ErrRetriesExhausted, err)
 		}
-		if !pause(ctx, time.Second<<attempt) {
+		delay := time.Second << attempt
+		var limited *RateLimitError
+		if errors.As(err, &limited) {
+			delay = max(delay, time.Until(limited.Until))
+		}
+		if !pause(ctx, delay) {
 			return context.Cause(ctx)
 		}
 		attempt++

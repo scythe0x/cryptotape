@@ -27,6 +27,15 @@ func (c *Controller) setFeedHealth(version uint64, health core.Health) {
 	} else {
 		health.PingMs = nil
 	}
+	health.Storage = c.pipelineHealth()
+	health.Timings = c.recentTimings()
+	health.TerminalErrors = c.terminalErrors.Load()
+	health.TerminalWaitMs = c.terminalWaitMs.Load()
+	health.TerminalRequestMs = c.terminalRequestMs.Load()
+	health.RenderDelayMs = c.renderDelayMs.Load()
+	for _, queue := range c.terminalQueues {
+		health.TerminalQueued += len(queue)
+	}
 	c.health = health
 	c.mu.Unlock()
 	c.emit("health", health)

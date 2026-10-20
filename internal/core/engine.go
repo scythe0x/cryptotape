@@ -13,15 +13,19 @@ type ruleState struct {
 }
 
 type symbolState struct {
-	last    time.Time
-	price   float64
-	bucket  int64
-	windows map[int]*window
-	rules   map[int64]*ruleState
+	last     time.Time
+	event    time.Time
+	updateID uint64
+	price    float64
+	bucket   int64
+	windows  map[int]*window
+	rules    map[int64]*ruleState
 }
 
 func (s *symbolState) resetHistory() {
 	s.last = time.Time{}
+	s.event = time.Time{}
+	s.updateID = 0
 	s.price = 0
 	s.bucket = 0
 	s.windows = make(map[int]*window)
@@ -129,9 +133,10 @@ func (e *Engine) Process(q Quote) []Candidate {
 		q.Received = time.Now()
 	}
 	if q.EventTime.IsZero() {
-		q.EventTime = q.Received
+		return nil
 	}
-	if q.Received.Sub(q.EventTime) > 10*time.Second || q.EventTime.After(q.Received.Add(2*time.Second)) {
+	age := q.Received.Add(q.ClockOffset).Sub(q.EventTime)
+	if age > 10*time.Second || age < -2*time.Second {
 		return nil
 	}
 
@@ -149,13 +154,17 @@ func (e *Engine) Process(q Quote) []Candidate {
 	if !state.last.IsZero() && q.Received.Sub(state.last) > 10*time.Second {
 		state.resetHistory()
 	}
-	if q.Received.Before(state.last) {
+	if q.Received.Before(state.last) || q.EventTime.Before(state.event) || (q.UpdateID != 0 && state.updateID != 0 && q.UpdateID <= state.updateID) {
 		return nil
 	}
 	state.last = q.Received
+	state.event = q.EventTime
+	if q.UpdateID != 0 {
+		state.updateID = q.UpdateID
+	}
 	previous := state.price
 	state.price = price
-	bucket := q.Received.UnixNano() / int64(bucketSize)
+	bucket := q.EventTime.UnixNano() / int64(bucketSize)
 	if previous == price && state.bucket == bucket {
 		return nil
 	}
@@ -169,7 +178,7 @@ func (e *Engine) Process(q Quote) []Candidate {
 			w = newWindow(time.Duration(rule.WindowSeconds) * time.Second)
 			state.windows[rule.WindowSeconds] = w
 		}
-		w.add(q.Received, price)
+		w.add(q.EventTime, price)
 		low, high := w.bounds()
 		up := (price/low - 1) * 100
 		down := (price/high - 1) * 100
@@ -199,6 +208,7 @@ func (e *Engine) Process(q Quote) []Candidate {
 		}
 		previousState.cooldown = q.Received.Add(time.Duration(e.settings.CooldownSeconds) * time.Second)
 		candidates = append(candidates, Candidate{
+			Detected: time.Now(), Expires: q.Received.Add(10*time.Second - age),
 			Rule: rule, Symbol: q.Symbol, Direction: direction, ChangePercent: change,
 			Price: price, SpreadPercent: (q.Ask - q.Bid) / price * 100,
 			QuoteVolume: volume, EventTime: q.EventTime, Received: q.Received,

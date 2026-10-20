@@ -208,28 +208,61 @@ func (s *Store) SaveSettings(settings core.Settings) error {
 }
 
 func (s *Store) InsertAlert(candidate core.Candidate) (core.Alert, error) {
+	alerts, err := s.InsertAlerts(context.Background(), []core.Candidate{candidate})
+	if err != nil {
+		return core.Alert{}, err
+	}
+	return alerts[0], nil
+}
+
+// publish only after the whole batch is committed.
+func (s *Store) InsertAlerts(ctx context.Context, candidates []core.Candidate) ([]core.Alert, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	alerts := make([]core.Alert, 0, len(candidates))
+	for _, candidate := range candidates {
+		alert, err := insertAlert(ctx, tx, candidate)
+		if err != nil {
+			return nil, err
+		}
+		alerts = append(alerts, alert)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return alerts, nil
+}
+
+func insertAlert(ctx context.Context, tx *sql.Tx, candidate core.Candidate) (core.Alert, error) {
 	status := "skipped"
 	if len(candidate.Rule.Terminals) > 0 {
 		status = "pending"
 	}
 	alert := core.Alert{
+		ReceivedAtMs: timestampMs(candidate.Received), DetectedAtMs: timestampMs(candidate.Detected), WriteStartedAtMs: time.Now().UnixMilli(),
 		RuleID: candidate.Rule.ID, RuleName: candidate.Rule.Name, Symbol: candidate.Symbol,
 		Direction: candidate.Direction, ChangePercent: candidate.ChangePercent,
 		Price: candidate.Price, SpreadPercent: candidate.SpreadPercent,
 		QuoteVolume: candidate.QuoteVolume, EventTimeMs: candidate.EventTime.UnixMilli(),
-		CreatedAtMs: time.Now().UnixMilli(), Sound: candidate.Rule.Sound,
+		CreatedAtMs: timestampMs(candidate.Detected), Sound: candidate.Rule.Sound,
 		Color: candidate.Rule.Color, Volume: candidate.Rule.Volume, Terminals: append([]string{}, candidate.Rule.Terminals...), TerminalStatus: status,
+	}
+	if alert.CreatedAtMs == 0 {
+		alert.CreatedAtMs = time.Now().UnixMilli()
 	}
 	terminals, err := json.Marshal(alert.Terminals)
 	if err != nil {
 		return alert, err
 	}
-	result, err := s.db.Exec(`INSERT INTO alerts(rule_id, rule_name, symbol, direction, change_percent, price, spread_percent,
-		quote_volume, event_time_ms, created_at_ms, sound, open_terminal, terminal_status, terminal_error,color,volume,terminals)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '',?,?,?)`,
+	result, err := tx.ExecContext(ctx, `INSERT INTO alerts(rule_id, rule_name, symbol, direction, change_percent, price, spread_percent,
+		quote_volume, event_time_ms, created_at_ms, sound, open_terminal, terminal_status, terminal_error,color,volume,terminals,received_at_ms,detected_at_ms,write_started_at_ms)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '',?,?,?,?,?,?)`,
 		alert.RuleID, alert.RuleName, alert.Symbol, alert.Direction, alert.ChangePercent, alert.Price,
 		alert.SpreadPercent, alert.QuoteVolume, alert.EventTimeMs, alert.CreatedAtMs,
-		alert.Sound, len(alert.Terminals) > 0, alert.TerminalStatus, alert.Color, alert.Volume, string(terminals))
+		alert.Sound, len(alert.Terminals) > 0, alert.TerminalStatus, alert.Color, alert.Volume, string(terminals), alert.ReceivedAtMs, alert.DetectedAtMs, alert.WriteStartedAtMs)
 	if err != nil {
 		return alert, err
 	}
@@ -238,7 +271,11 @@ func (s *Store) InsertAlert(candidate core.Candidate) (core.Alert, error) {
 }
 
 func (s *Store) UpdateTerminal(id int64, status, detail string) error {
-	_, err := s.db.Exec(`UPDATE alerts SET terminal_status=?, terminal_error=? WHERE id=?`, status, detail, id)
+	return s.UpdateTerminalContext(context.Background(), id, status, detail)
+}
+
+func (s *Store) UpdateTerminalContext(ctx context.Context, id int64, status, detail string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE alerts SET terminal_status=?, terminal_error=? WHERE id=?`, status, detail, id)
 	return err
 }
 
@@ -251,7 +288,7 @@ func (s *Store) ListAlerts(ctx context.Context, before int64, limit int) ([]core
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id, rule_id, rule_name, symbol, direction, change_percent, price,
 		spread_percent, quote_volume, event_time_ms, created_at_ms, sound, color, volume, terminals,
-		terminal_status, terminal_error FROM alerts WHERE id < ? ORDER BY id DESC LIMIT ?`, before, limit)
+		terminal_status, terminal_error, received_at_ms, detected_at_ms, write_started_at_ms FROM alerts WHERE id < ? ORDER BY id DESC LIMIT ?`, before, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +301,7 @@ func (s *Store) AlertsAfter(ctx context.Context, after int64, limit int) ([]core
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id, rule_id, rule_name, symbol, direction, change_percent, price,
 		spread_percent, quote_volume, event_time_ms, created_at_ms, sound, color, volume, terminals,
-		terminal_status, terminal_error FROM alerts WHERE id > ? ORDER BY id ASC LIMIT ?`, after, limit)
+		terminal_status, terminal_error, received_at_ms, detected_at_ms, write_started_at_ms FROM alerts WHERE id > ? ORDER BY id ASC LIMIT ?`, after, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +340,7 @@ func scanAlerts(rows *sql.Rows, limit int) ([]core.Alert, error) {
 		if err := rows.Scan(&alert.ID, &alert.RuleID, &alert.RuleName, &alert.Symbol, &alert.Direction,
 			&alert.ChangePercent, &alert.Price, &alert.SpreadPercent, &alert.QuoteVolume,
 			&alert.EventTimeMs, &alert.CreatedAtMs, &alert.Sound, &alert.Color, &alert.Volume, &terminals,
-			&alert.TerminalStatus, &alert.TerminalError); err != nil {
+			&alert.TerminalStatus, &alert.TerminalError, &alert.ReceivedAtMs, &alert.DetectedAtMs, &alert.WriteStartedAtMs); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(terminals), &alert.Terminals); err != nil {
@@ -315,4 +352,11 @@ func scanAlerts(rows *sql.Rows, limit int) ([]core.Alert, error) {
 		alerts = append(alerts, alert)
 	}
 	return alerts, rows.Err()
+}
+
+func timestampMs(at time.Time) int64 {
+	if at.IsZero() {
+		return 0
+	}
+	return at.UnixMilli()
 }

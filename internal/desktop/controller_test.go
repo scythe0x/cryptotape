@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"cryptotape/internal/core"
-	"cryptotape/internal/storage"
 )
 
 func TestDelayedAlertDoesNotOpenTerminal(t *testing.T) {
@@ -20,15 +19,8 @@ func TestDelayedAlertDoesNotOpenTerminal(t *testing.T) {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer server.Close()
-	store, err := storage.Open(filepath.Join(t.TempDir(), "alerts.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Error(err)
-		}
-	})
+	controller, _ := testController(t, func(string, any) {})
+	store := controller.store
 	alert, err := store.InsertAlert(core.Candidate{
 		Rule:   core.Rule{ID: 1, Name: "knife", Terminals: []string{"vataga"}},
 		Symbol: "BTCUSDT", Direction: "down", EventTime: time.Now().Add(-11 * time.Second),
@@ -38,8 +30,9 @@ func TestDelayedAlertDoesNotOpenTerminal(t *testing.T) {
 	}
 	terminal := NewTerminal()
 	terminal.baseURL = server.URL
-	controller := &Controller{store: store, terminal: terminal, emit: func(string, any) {}}
-	controller.openAutomatically(alert)
+	controller.terminal = terminal
+	controller.enqueueAutomatic(alert, time.Now().Add(-time.Second))
+	controller.actionWG.Wait()
 	if requests.Load() != 0 {
 		t.Fatal("stale alert opened a market")
 	}

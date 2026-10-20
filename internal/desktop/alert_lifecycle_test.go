@@ -211,6 +211,16 @@ func TestAlertDispatchSurvivesTerminalFailure(t *testing.T) {
 			if controller.audio.latest != alert.ID {
 				t.Fatal("terminal failure blocked sound action")
 			}
+			timings := controller.recentTimings()
+			if len(timings) != 1 || timings[0].TerminalSentAtMs < timings[0].CommittedAtMs || timings[0].TerminalSentAtMs == 0 || timings[0].TerminalDoneAtMs < timings[0].TerminalSentAtMs {
+				t.Fatalf("invalid terminal stage trace: %+v", timings)
+			}
+			controller.AlertRendered(alert.ID, "feed")
+			controller.AlertRendered(alert.ID, "overlay")
+			timings = controller.recentTimings()
+			if timings[0].FeedRenderedAtMs == 0 || timings[0].OverlayRenderedAtMs == 0 {
+				t.Fatalf("missing browser-frame traces: %+v", timings)
+			}
 		})
 	}
 }

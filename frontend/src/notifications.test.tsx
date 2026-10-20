@@ -37,6 +37,7 @@ const rule: Rule = {
   sound: 'chime',
 }
 const alert: Alert = {
+  receivedAtMs: 1, detectedAtMs: 1, writeStartedAtMs: 1,
   id: 1,
   ruleId: 1,
   ruleName: 'knife',
@@ -69,6 +70,9 @@ const initialSnapshot = (): Snapshot => ({
     tigerLinkGroup: 'A',
   },
   health: {
+    timings: [], quoteAgeMs: 50, streams: [], storage: { size: 0, oldestMs: 0, writeMs: 0, unsaved: 0, error: '' },
+    volumeAgeMs: 0, serviceError: '', usedWeight: 0, terminalQueued: 0, terminalErrors: 0,
+    renderDelayMs: 0, terminalWaitMs: 0, terminalRequestMs: 0,
     state: 'connected',
     viaProxy: false,
     detail: 'signals live',
@@ -264,7 +268,7 @@ it('shows clear colored connection states without a warmup message', () => {
   expect(screen.getByRole('status').textContent).toBe('подключение к Binance')
   expect(screen.getByRole('status').className).toContain('latency-warning')
   rerender(<ConnectionStatus health={{ ...health, state: 'warming' }} />)
-  expect(screen.getByRole('status').textContent).toBe('подключено50 мс')
+  expect(screen.getByRole('status').textContent).toBe('50 мс')
   expect(screen.queryByText('прогрев')).toBeNull()
   expect(screen.getByRole('status').className).toContain('latency-good')
 })
@@ -494,4 +498,21 @@ it('uses local SOCKS automatically when credentials are empty', async () => {
       true,
     ),
   )
+})
+
+
+it('shows quote age rather than transport ping and keeps the warning compact', () => {
+  const health = { ...initialSnapshot().health, quoteAgeMs: 5850, pingMs: 20 }
+  const { rerender } = render(<ConnectionStatus health={health} />)
+  expect(screen.getByRole('status').textContent).toBe('5850 ms')
+  expect(screen.getByRole('status').className).toContain('latency-warning')
+  expect(screen.getByRole('status').title).toContain('20 ms')
+  rerender(<ConnectionStatus health={{ ...health, quoteAgeMs: 80 }} />)
+  expect(screen.getByRole('status').className).toContain('latency-good')
+})
+
+
+it('acknowledges the overlay browser frame separately from feed rendering', async () => {
+  render(<Overlay />)
+  await waitFor(() => expect(backend.call).toHaveBeenCalledWith('main.DesktopService.AlertRendered', alert.id, 'overlay'))
 })

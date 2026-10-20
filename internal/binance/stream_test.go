@@ -33,16 +33,15 @@ func (s streamTransport) RoundTrip(request *http.Request) (*http.Response, error
 
 func TestBookStreamDecodesAndFiltersRealFrames(t *testing.T) {
 	for _, test := range []struct {
-		name                  string
-		eligible, volumeReady bool
-		age                   time.Duration
-		wantQuote, wantStale  bool
+		name                 string
+		eligible             bool
+		age                  time.Duration
+		wantQuote, wantStale bool
 	}{
-		{"fresh", true, true, 0, true, false},
-		{"stale", true, true, 11 * time.Second, false, true},
-		{"future", true, true, -3 * time.Second, false, true},
-		{"below turnover", false, true, 0, false, false},
-		{"volume disconnected", true, false, 0, false, false},
+		{"fresh", true, 0, true, false},
+		{"stale", true, 11 * time.Second, false, true},
+		{"future", true, -3 * time.Second, false, true},
+		{"below turnover", false, 0, false, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -58,12 +57,17 @@ func TestBookStreamDecodesAndFiltersRealFrames(t *testing.T) {
 					return
 				}
 				var subscription struct {
+					ID     int64
 					Method string
 					Params []string
 				}
 				if err := json.Unmarshal(raw, &subscription); err != nil ||
 					subscription.Method != "SUBSCRIBE" || len(subscription.Params) != 1 || subscription.Params[0] != "btcusdt@bookTicker" {
 					t.Errorf("incorrect book subscription: %s %v", raw, err)
+					return
+				}
+				if err := websocketWriteJSON(r.Context(), connection, map[string]any{"id": subscription.ID, "result": nil}); err != nil {
+					t.Error(err)
 					return
 				}
 				frame := fmt.Sprintf(`{"stream":"btcusdt@bookTicker","data":{"e":"bookTicker","s":"BTCUSDT","b":"100","B":"7000","a":"102","A":"8000","E":%d}}`,
@@ -90,7 +94,6 @@ func TestBookStreamDecodesAndFiltersRealFrames(t *testing.T) {
 				updates: []chan struct{}{make(chan struct{}, 1)}, shards: 1,
 				cb: Callbacks{Health: func(core.Health) {}, Quote: func(q core.Quote) { quotes <- q }},
 			}
-			feed.volumeOK.Store(test.volumeReady)
 			// eligibility is removed after subscription, as during a turnover refresh.
 			if !test.eligible {
 				feed.cb.Health = func(core.Health) {
@@ -152,6 +155,7 @@ func TestFeedStartupAndReconnectProduceFreshSignals(t *testing.T) {
 				return
 			}
 			var subscription struct {
+				ID     int64
 				Method string
 				Params []string
 			}
@@ -163,6 +167,10 @@ func TestFeedStartupAndReconnectProduceFreshSignals(t *testing.T) {
 			if err := json.Unmarshal(raw, &subscription); err != nil || len(subscription.Params) != 1 ||
 				subscription.Params[0] != "btcusdt@bookTicker" {
 				t.Errorf("incorrect eligible subscription: %s %v", raw, err)
+				return
+			}
+			if err := websocketWriteJSON(r.Context(), connection, map[string]any{"id": subscription.ID, "result": nil}); err != nil {
+				t.Error(err)
 				return
 			}
 			prices := []float64{100, 94}
@@ -231,4 +239,10 @@ func TestFeedStartupAndReconnectProduceFreshSignals(t *testing.T) {
 			t.Fatalf("signal used stale prices: %+v", candidate)
 		}
 	}
+}
+
+// readBook is the single-session entry point for local protocol tests.
+func (f *Feed) readBook(ctx context.Context, shard int) (bool, error) {
+	f.setStream(shard, func(s *streamState) { s.owner = 1 })
+	return f.readSession(ctx, shard, 1, func() bool { return true })
 }

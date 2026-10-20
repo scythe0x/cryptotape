@@ -125,3 +125,33 @@ func TestListingRefreshPreservesExistingShardsAndAddsNewMarket(t *testing.T) {
 		t.Fatal("eligible markets not subscribed")
 	}
 }
+
+func BenchmarkCombinedBookDecode(b *testing.B) {
+	raw := []byte(`{"stream":"btcusdt@bookTicker","data":{"e":"bookTicker","s":"BTCUSDT","b":"82057.70","B":"6.294","a":"82057.80","A":"1.611","T":1792468216127,"E":1792468216127,"u":99}}`)
+	for _, mode := range []string{"two_pass", "production_one_pass"} {
+		b.Run(mode, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				var frame bookFrame
+				if mode == "two_pass" {
+					var envelope struct {
+						Data json.RawMessage `json:"data"`
+					}
+					if err := json.Unmarshal(raw, &envelope); err != nil {
+						b.Fatal(err)
+					}
+					if err := json.Unmarshal(envelope.Data, &frame.Data); err != nil {
+						b.Fatal(err)
+					}
+				} else {
+					if err := json.Unmarshal(raw, &frame); err != nil {
+						b.Fatal(err)
+					}
+				}
+				if frame.Data.Bid != "82057.70" || frame.Data.Ask != "82057.80" || frame.Data.UpdateID != 99 {
+					b.Fatal("incorrect decoded quote")
+				}
+			}
+		})
+	}
+}

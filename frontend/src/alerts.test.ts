@@ -16,6 +16,7 @@ vi.mock('@wailsio/runtime', () => ({
 
 function alert(id: number, status = 'pending'): Alert {
   return {
+    receivedAtMs: 1, detectedAtMs: 1, writeStartedAtMs: 1,
     id, ruleId: 1, ruleName: 'knife', symbol: `COIN${id}USDT`, direction: 'down',
     changePercent: -10, price: 90, spreadPercent: .01, quoteVolume: 100_000_000,
     eventTimeMs: 1, createdAtMs: 1, sound: 'chime', color: '#a78bfa', volume: 1, terminals: ['vataga'],
@@ -73,4 +74,23 @@ describe('market crash presentation', () => {
     stop()
     expect(listeners.size).toBe(0)
   })
+})
+
+it('recovers terminal results flushed before the native window publishes the alert', () => {
+  vi.useFakeTimers()
+  vi.stubGlobal('window', {
+    requestAnimationFrame: (callback: () => void) => setTimeout(callback, 16),
+    cancelAnimationFrame: clearTimeout,
+    setTimeout,
+    clearTimeout,
+  })
+  let current: Alert[] = []
+  const stop = events.alerts((incoming, updates) => { current = mergeAlerts(current, incoming, updates) })
+  listeners.get('alert:update')?.({ data: { id: 77, terminalStatus: 'ok', terminalError: '' } })
+  vi.advanceTimersByTime(60)
+  expect(current).toHaveLength(0)
+  listeners.get('alert:new')?.({ data: alert(77) })
+  vi.advanceTimersByTime(60)
+  expect(current[0].terminalStatus).toBe('ok')
+  stop()
 })

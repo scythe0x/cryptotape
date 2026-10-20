@@ -1,47 +1,44 @@
 import type { Health } from '../api'
-import { latencyState } from '../connection'
+import { quoteAgeState } from '../connection'
 import { useTranslation } from '../i18n'
 import { localizeDiagnostic } from '../i18n/diagnostics'
 import { desktop } from '../api'
 import { Button } from './ui'
-import { RotateCw } from 'lucide-react'
+import { RotateCw, Wifi } from 'lucide-react'
 import { useState } from 'react'
 
 export function ConnectionStatus({ health }: { health: Health | null }) {
   const { t } = useTranslation()
   const [error, setError] = useState('')
-  const online = health?.state === 'connected' || health?.state === 'warming'
-  const ping = online ? health.pingMs : null
+  const online = health?.state === 'connected' || health?.state === 'warming' || health?.state === 'degraded'
+  const age = online ? health.quoteAgeMs : null
   const connecting = !health || ['starting', 'connecting', 'reconnecting'].includes(health.state)
-  const state = online ? latencyState(ping) : connecting ? 'warning' : 'offline'
+  const state = online ? quoteAgeState(age) : connecting ? 'warning' : 'offline'
 
   return (
     <div
       className={`connection-status latency-${state}`}
       role="status"
-      title={`${health ? localizeDiagnostic(health.detail) : t('connecting')} · ${t('pingDescription')}`}
+      title={`${health ? localizeDiagnostic(health.detail) : t('connecting')} · ${t('pingDescription')}: ${health?.pingMs ?? '—'} ms${health?.serviceError ? ` · ${health.serviceError}` : ''}`}
     >
-      <span className={`connection-dot ${online ? 'is-online' : ''}`} aria-hidden="true" />
-      <span className="connection-label">
-        {t(
-          online
-            ? 'connected'
-            : connecting
-              ? health?.viaProxy
-                ? 'proxyConnecting'
-                : 'binanceConnecting'
-              : health?.viaProxy
-                ? 'proxyUnavailable'
-                : 'binanceDisconnected',
-        )}
-      </span>
-      {online && (
+      <Wifi size={14} aria-hidden="true" />
+      {online ? (
         <span className="connection-ping">
-          {ping === null ? '—' : ping}
-          <span> {t('ms')}</span>
+          {age === null ? '—' : age}<span> {t('ms')}</span>
+        </span>
+      ) : (
+        <span className="connection-label">
+          {t(connecting
+            ? health?.viaProxy ? 'proxyConnecting' : 'binanceConnecting'
+            : health?.viaProxy ? 'proxyUnavailable' : 'binanceDisconnected')}
         </span>
       )}
-      {!online && (
+      {health?.storage.error && (
+        <span className="connection-action-error" title={`${health.storage.error} · ${health.storage.unsaved}`}>
+          ! {health.storage.unsaved}
+        </span>
+      )}
+      {(!online || health?.state === 'degraded') && (
         <Button
           type="button"
           variant="ghost"

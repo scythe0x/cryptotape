@@ -41,6 +41,9 @@ export const settingsSchema = z.object({
 })
 
 export const alertSchema = z.object({
+  receivedAtMs: z.number().default(0),
+  detectedAtMs: z.number().default(0),
+  writeStartedAtMs: z.number().default(0),
   id: z.number(),
   ruleId: z.number(),
   ruleName: z.string(),
@@ -61,6 +64,38 @@ export const alertSchema = z.object({
 })
 
 export const healthSchema = z.object({
+  timings: z.array(z.object({
+    id: z.number(),
+    receivedAtMs: z.number(),
+    detectedAtMs: z.number(),
+    committedAtMs: z.number(),
+    terminalSentAtMs: z.number(),
+    terminalDoneAtMs: z.number(),
+    feedRenderedAtMs: z.number(),
+    overlayRenderedAtMs: z.number(),
+  })).nullish().transform((value) => value ?? []),
+  quoteAgeMs: z.number().nullable().default(null),
+  streams: z.array(z.object({
+    shard: z.number(),
+    state: z.string(),
+    subscriptions: z.number(),
+    quoteAgeMs: z.number().nullable(),
+    ageP99Ms: z.number().default(0),
+    ageMaxMs: z.number().default(0),
+    detail: z.string(),
+  })).nullish().transform((value) => value ?? []),
+  storage: z.object({
+    size: z.number(), oldestMs: z.number(), writeMs: z.number(),
+    unsaved: z.number(), error: z.string(),
+  }).default({ size: 0, oldestMs: 0, writeMs: 0, unsaved: 0, error: '' }),
+  volumeAgeMs: z.number().default(0),
+  serviceError: z.string().default(''),
+  usedWeight: z.number().default(0),
+  terminalQueued: z.number().default(0),
+  terminalErrors: z.number().default(0),
+  renderDelayMs: z.number().default(0),
+  terminalWaitMs: z.number().default(0),
+  terminalRequestMs: z.number().default(0),
   viaProxy: z.boolean(),
   state: z.string(),
   detail: z.string(),
@@ -103,6 +138,7 @@ async function command(method: string, ...args: unknown[]): Promise<void> {
 }
 
 export const desktop = {
+  alertRendered: (id: number, view: 'feed' | 'overlay') => command('AlertRendered', id, view),
   snapshot: () => invoke('GetSnapshot', snapshotSchema),
   saveRule: (rule: Rule) => invoke('SaveRule', ruleSchema, rule),
   deleteRule: (id: number) => command('DeleteRule', id),
@@ -137,6 +173,10 @@ export function listen<T>(name: string, schema: z.ZodType<T>, handle: (value: T)
 function alertBatches(handle: (alerts: Alert[], updates: AlertUpdate[]) => void): () => void {
   const pending = new Map<number, Alert>()
   const updates = new Map<number, AlertUpdate>()
+  // terminal workers may finish before native overlay operations publish alert:new.
+  const earlyUpdates = new Map<number, AlertUpdate>()
+  const seen = new Set<number>()
+  const recoveryLimit = 8192
   let frame = 0
   let fallback = 0
 
@@ -159,10 +199,27 @@ function alertBatches(handle: (alerts: Alert[], updates: AlertUpdate[]) => void)
 
   const stopNew = listen('alert:new', alertSchema, (alert) => {
     pending.set(alert.id, alert)
+    seen.add(alert.id)
+    if (seen.size > recoveryLimit) {
+      const oldest = seen.values().next().value
+      if (oldest !== undefined) seen.delete(oldest)
+    }
+    const early = earlyUpdates.get(alert.id)
+    if (early) {
+      updates.set(alert.id, early)
+      earlyUpdates.delete(alert.id)
+    }
     schedule()
   })
   const stopUpdate = listen('alert:update', alertUpdateSchema, (update) => {
     updates.set(update.id, update)
+    if (!seen.has(update.id)) {
+      earlyUpdates.set(update.id, update)
+      if (earlyUpdates.size > recoveryLimit) {
+        const oldest = earlyUpdates.keys().next().value
+        if (oldest !== undefined) earlyUpdates.delete(oldest)
+      }
+    }
     schedule()
   })
   return () => {

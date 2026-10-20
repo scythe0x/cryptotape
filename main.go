@@ -77,6 +77,8 @@ func (s *DesktopService) AlertsAfter(after int64, limit int) ([]core.Alert, erro
 	return s.controller.AlertsAfter(after, limit)
 }
 
+func (s *DesktopService) AlertRendered(id int64, view string) { s.controller.AlertRendered(id, view) }
+
 func (s *DesktopService) SessionAlerts() ([]core.Alert, error) {
 	return s.controller.SessionAlerts()
 }
@@ -115,12 +117,7 @@ func (s *DesktopService) showOverlay(id int64) {
 	s.latestID = max(s.latestID, id)
 	if !s.visible {
 		s.overlay.Show()
-		if snapshot, err := s.controller.GetSnapshot(); err == nil {
-			s.placeOverlay(snapshot.Settings.MonitorID)
-		} else {
-			slog.Warn("overlay position", "error", err)
-			s.placeOverlay("")
-		}
+		s.placeOverlay(s.controller.MonitorID())
 		s.visible = true
 	}
 }

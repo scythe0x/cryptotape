@@ -14,6 +14,7 @@ import { desktop } from '../api'
 import { useTranslation } from '../i18n'
 import { localizeDiagnostic } from '../i18n/diagnostics'
 import { Ticker } from './Ticker'
+import { useAlertRendered } from '../useAlertRendered'
 import { AlertBadge } from './AlertBadge'
 import { ExchangeIcon } from './ExchangeIcon'
 import { TerminalButton, terminals } from './TerminalButton'
@@ -152,6 +153,7 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError }: Props
     getItemKey,
     anchorTo: pausedAt === null ? 'start' : 'end',
   })
+  useAlertRendered(virtualizer.getVirtualItems().map((item) => rows[item.index].original.id), 'feed')
   const unseen = pausedAt === null ? 0 : alerts.filter((alert) => alert.id > pausedAt).length
 
   function onScroll() {

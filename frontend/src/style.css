@@ -29,13 +29,11 @@ h1, h2, h3, p { margin: 0; }
 .latency-good { --status-color: var(--green); }
 .latency-warning { --status-color: #e7b957; }
 .latency-poor, .latency-offline { --status-color: var(--red); }
-.connection-dot { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--status-color); position: relative; }
-.connection-dot.is-online::after { content: ''; position: absolute; inset: -3px; border: 1px solid var(--status-color); border-radius: 50%; animation: connection-pulse 2s ease-out infinite; }
+.connection-status > svg { color: var(--status-color); flex-shrink: 0; }
 .connection-label { font-size: 11px; color: #bcbcbc; }
 .connection-ping { font-size: 11px; color: var(--status-color); font-variant-numeric: tabular-nums; }
 .connection-ping span { opacity: .65; font-size: 10px; }
 .ticker-quote { opacity: .38; font-weight: 500; }
-@keyframes connection-pulse { 0% { transform: scale(.7); opacity: .6; } 85%, 100% { transform: scale(1.65); opacity: 0; } }
 
 .new-rule { width: 100%; flex-shrink: 0; }
 .rule-list { max-height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; margin-top: 14px; }

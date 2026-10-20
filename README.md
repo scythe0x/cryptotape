@@ -31,16 +31,16 @@ download the exe and run it. to update, close cryptotape and replace the old exe
 
 ## signals
 
-- subscribes to `@bookTicker` for trading USDT contracts above the lowest per-rule 24-hour quote-volume threshold; volume comes from REST and `!miniTicker@arr`. every five minutes, REST reconciles turnover and trading contracts; new listings join existing websocket shards without restarting other symbols.
-- evaluates bid/ask midpoint on every price change. each rule uses 100 ms extrema buckets for its configured rolling window. the window is a maximum lookback: a crossing in partial fresh history alerts immediately.
+- subscribes to `@bookTicker` for trading USDT contracts above the lowest per-rule 24-hour quote-volume threshold; volume comes from REST every five minutes. failed refreshes retain the last successful snapshot without stopping price streams; clock, turnover and contract refreshes recover independently. every five minutes, REST reconciles turnover and trading contracts; new listings join existing websocket shards without restarting other symbols.
+- evaluates bid/ask midpoint on every price change. each rule uses 100 ms extrema buckets indexed by raw Binance event time. local monotonic time controls cooldown and freshness deadlines; clock correction affects quote age only. duplicate or out-of-order updates are rejected. the window is a maximum lookback: a crossing in partial fresh history alerts immediately.
 - emits the first crossing up or down per symbol and rule. a cooldown suppresses continuations and rebounds without producing a delayed signal at its end.
-- persists an alert before the overlay, sound, or optional local terminal request. the terminal route is `POST http://localhost:5005/api/open/zenica/binance/F/{SYMBOL}` and never uses the Binance proxy.
-- keeps one native sound playing: each new alert stops the previous sound. every alert with auto-open enabled sends its own terminal request.
-- reconnects after 1, 2, 4 and 8 seconds, then waits for manual reconnect. a session with fresh data that stays connected for a minute resets the retry budget. stale quotes and lost connections reset the affected window; alerts use the available fresh history immediately, without waiting for a full window. movement across a connection gap is never inferred. the UI reads missed alerts by SQLite cursor.
+- queues up to 8192 alert candidates without waiting for SQLite. a writer commits batches of up to 64 before publishing or scheduling actions; storage failures and overflow remain visible. shutdown drains accepted work, with a 15-second persistence deadline and explicit errors for unsaved alerts. persists an alert before the overlay, sound, or optional local terminal request. the terminal route is `POST http://localhost:5005/api/open/zenica/binance/F/{SYMBOL}` and never uses the Binance proxy.
+- keeps one native sound playing: each new alert stops the previous sound. every alert with auto-open enabled enters a separate bounded terminal queue: 32 Vataga workers and one Tiger worker. request timeouts start after dequeue; commands older than the original 10-second freshness deadline are marked stale. distinct alerts are never coalesced and ambiguous failures are not retried.
+- each price shard reconnects after 1, 2, 4 and 8 seconds, then waits for manual reconnect without stopping healthy shards. subscriptions require acknowledgement within five seconds, control messages are paced at five per second, and planned rotation at 23h50m confirms a replacement before switching. a session with fresh data that stays connected for a minute resets the retry budget. stale quotes and lost connections reset the affected window; alerts use the available fresh history immediately, without waiting for a full window. movement across a connection gap is never inferred. the UI reads missed alerts by SQLite cursor.
 
 each rule has a badge color, a volume from 0 to 100%, its own turnover floor, and independent Vataga/Tiger auto-open choices. rules are always active; delete a rule from its editor to remove it. custom mp3/wav import lives in the sound selector.
 
-the main window contains connection status and the virtualized alert feed. rule management lives in settings. bursts are batched per frame without discarding history; notifications retain the latest three cards. reading older alerts keeps the scroll position, with a button to jump to new ones. animations respect reduced-motion preferences.
+the main window contains a compact internet icon and worst price-stream quote age in milliseconds (yellow above 2000 ms), plus the virtualized alert feed. transport ping stays separate in the tooltip. diagnostics expose per-shard current age and a 30-second histogram p99 upper bound, REST snapshot age/errors, persistence backlog, terminal backlog and the latest 128 alert stage traces. frontend acknowledgements identify feed/overlay browser frames; they do not prove OS presentation latency. rule management lives in settings. bursts are batched per frame without discarding history; notifications retain the latest three cards. reading older alerts keeps the scroll position, with a button to jump to new ones. animations respect reduced-motion preferences.
 
 settings are stored in the user's application config directory (`cryptotape/cryptotape.sqlite`), with imported sounds alongside it. the proxy settings tab stores named profiles with host, port and optional credentials. the protocol is inferred: local unauthenticated proxies use SOCKS5, authenticated upstream proxies use HTTP CONNECT. direct routing is selected by default; a new profile is activated only when its checked-by-default "use this proxy" checkbox is left checked. saving an inactive profile does not change the selected route. selected proxies apply to both Binance REST and websocket traffic; terminal requests stay direct. there is no automatic direct-route fallback. a shadowsocks client can expose its local SOCKS5 port; raw shadowsocks encrypted endpoints are not supported by an ip/port alone.
 
@@ -73,3 +73,14 @@ the automated crash replay warms 750 markets, then feeds 82,500 volatile quotes 
 ## interface languages
 
 general settings supports english and russian (`settings.language`: `en` / `ru`). the selection persists in SQLite and updates both webviews without restarting the market feed. typed dictionaries live in `frontend/src/i18n/`; user alert names, tickers, terminal identifiers and custom sound filenames remain unchanged. external API diagnostic details retain their original content.
+
+## market-data audit
+
+[updated measurements and dynamic-alert assessment](docs/market-data-audit.md). dynamic percentages are test-only and are not enabled in the application. opt-in stress models:
+
+```sh
+CRYPTOTAPE_DYNAMIC_AUDIT=1 go test ./internal/storage -run '^TestDynamicLoadAudit$' -count=1 -v
+go test ./internal/storage -run '^$' -bench BenchmarkDynamicPeakObservation -benchmem
+cd frontend
+VITE_DYNAMIC_AUDIT=1 npm test -- src/dynamic-audit.test.tsx
+```

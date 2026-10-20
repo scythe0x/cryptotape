@@ -111,3 +111,32 @@ func TestDeletedRuleIDIsNotReusedByHistoryBadges(t *testing.T) {
 		t.Fatal("a new rule inherited an old rule's history")
 	}
 }
+
+func TestMigratesVersionOneWithoutLosingAlerts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v1.sqlite")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alert, err := store.InsertAlert(core.Candidate{Rule: core.Rule{ID: 1, Name: "existing"}, Symbol: "BTCUSDT", Direction: "down", ChangePercent: -10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{"ALTER TABLE alerts DROP COLUMN received_at_ms", "ALTER TABLE alerts DROP COLUMN detected_at_ms", "ALTER TABLE alerts DROP COLUMN write_started_at_ms", "PRAGMA user_version=1"} {
+		if _, err := store.db.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	alerts, err := reopened.ListAlerts(context.Background(), 0, 100)
+	if err != nil || len(alerts) != 1 || alerts[0].ID != alert.ID || alerts[0].ChangePercent != -10 || alerts[0].ReceivedAtMs != 0 {
+		t.Fatalf("v1 migration lost history: %+v %v", alerts, err)
+	}
+}

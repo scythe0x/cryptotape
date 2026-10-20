@@ -2,10 +2,9 @@ package desktop
 
 import (
 	"context"
-	"cryptotape/internal/core"
 	"errors"
 	"fmt"
-	"log/slog"
+
 	"time"
 )
 
@@ -23,6 +22,15 @@ func (c *Controller) OpenTerminal(id int64, symbol, terminal string) error {
 }
 
 func (c *Controller) OpenTerminals(id int64, symbol string, terminals []string) OpenResult {
+	c.pipelineMu.RLock()
+	if c.closing {
+		c.pipelineMu.RUnlock()
+		return OpenResult{Error: "controller closed"}
+	}
+	c.actionWG.Add(1)
+	c.pipelineMu.RUnlock()
+	defer c.actionWG.Done()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	opened, err := c.openInTerminals(ctx, symbol, terminals)
@@ -33,35 +41,10 @@ func (c *Controller) OpenTerminals(id int64, symbol string, terminals []string) 
 		result.Error = err.Error()
 	}
 	if id > 0 {
-		if saveErr := c.store.UpdateTerminal(id, status, result.Error); saveErr != nil {
-			slog.Error("save terminal status", "error", saveErr)
-		}
-		c.emit("alert:update", map[string]any{"id": id, "terminalStatus": status, "terminalError": result.Error})
+		c.saveTerminalResult(id, status, result.Error)
 	}
-	return result
-}
 
-func (c *Controller) openAutomatically(alert core.Alert) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	var err error
-	status, detail := "ok", ""
-	if time.Since(time.UnixMilli(alert.EventTimeMs)) > 10*time.Second {
-		status = "stale"
-		err = errors.New("alert is older than 10 seconds")
-	} else {
-		_, err = c.openInTerminals(ctx, alert.Symbol, alert.Terminals)
-	}
-	if err != nil {
-		if status != "stale" {
-			status = "error"
-		}
-		detail = err.Error()
-	}
-	if saveErr := c.store.UpdateTerminal(alert.ID, status, detail); saveErr != nil {
-		slog.Error("save terminal status", "error", saveErr)
-	}
-	c.emit("alert:update", map[string]any{"id": alert.ID, "terminalStatus": status, "terminalError": detail})
+	return result
 }
 
 func (c *Controller) openInTerminal(ctx context.Context, symbol, terminal string) error {
@@ -89,22 +72,38 @@ func (c *Controller) openInTerminals(ctx context.Context, symbol string, termina
 		seen[terminal] = true
 	}
 	results := make(chan error, len(terminals))
-	for _, terminal := range terminals {
-		go func() {
-			err := c.openInTerminal(ctx, symbol, terminal)
-			if err != nil {
-				err = fmt.Errorf("%s: %w", terminal, err)
-			}
-			results <- err
-		}()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(2 * time.Second)
 	}
+	c.pipelineMu.RLock()
+	if c.closing {
+		c.pipelineMu.RUnlock()
+		return 0, errors.New("controller closed")
+	}
+	for _, terminal := range terminals {
+		c.enqueueTerminal(terminalJob{symbol: symbol, terminal: terminal, queued: time.Now(), expires: deadline,
+			complete: func(err error, _ string) {
+				if err != nil {
+					err = fmt.Errorf("%s: %w", terminal, err)
+				}
+				results <- err
+			},
+		})
+	}
+	c.pipelineMu.RUnlock()
 	var failures []error
 	opened := 0
 	for range terminals {
-		if err := <-results; err != nil {
-			failures = append(failures, err)
-		} else {
-			opened++
+		select {
+		case err := <-results:
+			if err != nil {
+				failures = append(failures, err)
+			} else {
+				opened++
+			}
+		case <-ctx.Done():
+			return opened, errors.Join(append(failures, ctx.Err())...)
 		}
 	}
 	return opened, errors.Join(failures...)
