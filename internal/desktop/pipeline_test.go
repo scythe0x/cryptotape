@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -166,13 +167,18 @@ func TestQueuedCrashOpens750MarketsWithSlowResponses(t *testing.T) {
 	defer server.Close()
 	c, _ := testController(t, func(string, any) {})
 	c.terminal.baseURL = server.URL
-	started := time.Now()
+	candidates := make([]core.Candidate, 750)
+	prepared := time.Now()
 	for i := range 750 {
-		candidate := core.Candidate{Rule: core.Rule{ID: 1, Terminals: []string{"vataga"}}, Symbol: fmt.Sprintf("COIN%dUSDT", i), EventTime: started, Received: started, Detected: started}
-		alert, err := c.store.InsertAlert(candidate)
-		if err != nil {
-			t.Fatal(err)
-		}
+		candidates[i] = core.Candidate{Rule: core.Rule{ID: 1, Terminals: []string{"vataga"}}, Symbol: fmt.Sprintf("COIN%dUSDT", i), EventTime: prepared, Received: prepared, Detected: prepared}
+	}
+	alerts, err := c.store.InsertAlerts(context.Background(), candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// measure the terminal queue, excluding database fixture preparation.
+	started := time.Now()
+	for _, alert := range alerts {
 		c.enqueueAutomatic(alert, started.Add(10*time.Second))
 	}
 	c.actionWG.Wait()

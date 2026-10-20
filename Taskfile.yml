@@ -1,6 +1,10 @@
 version: '3'
 
 tasks:
+  perf:
+    cmds:
+      - bash scripts/perf.sh
+
   run:mac:
     cmds:
       - go run -tags private_mac_apis .
@@ -18,6 +22,10 @@ tasks:
 
   build:windows:
     deps: [frontend]
+    cmds:
+      - task: build:windows:binary
+
+  build:windows:binary:
     env:
       GOOS: windows
       GOARCH: amd64

@@ -10,6 +10,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 20
     permissions:
       contents: write
     env:
@@ -47,7 +48,7 @@ jobs:
       - run: go vet ./internal/... .
       - name: install build tools
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.33
-      - run: wails3 task build:windows
+      - run: wails3 task build:windows:binary
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}

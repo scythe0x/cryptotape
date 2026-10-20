@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"sort"
 	"strconv"
@@ -189,14 +190,23 @@ func (f *Feed) syncClock(ctx context.Context) error {
 		ServerTime int64 `json:"serverTime"`
 	}
 	start := time.Now()
-	if err := f.get(ctx, "/fapi/v1/time", &result); err != nil {
+	var timingMu sync.Mutex
+	trace := &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) {
+		// exclude rest admission, proxy negotiation and TLS from the clock sample.
+		timingMu.Lock()
+		start = time.Now()
+		timingMu.Unlock()
+	}}
+	if err := f.get(httptrace.WithClientTrace(ctx, trace), "/fapi/v1/time", &result); err != nil {
 		return err
 	}
 	end := time.Now()
 	if result.ServerTime == 0 {
 		return errors.New("invalid Binance clock")
 	}
+	timingMu.Lock()
 	localMidpoint := start.Add(end.Sub(start) / 2)
+	timingMu.Unlock()
 	f.clockOffset.Store(time.UnixMilli(result.ServerTime).Sub(localMidpoint).Nanoseconds())
 	return nil
 }

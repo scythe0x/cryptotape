@@ -25,9 +25,35 @@ the second command writes `build/bin/cryptotape.exe`. all frontend assets and bu
 
 ## releases and updates
 
-pushing a version tag such as `v0.1.3` runs `.github/workflows/release.yml`: frontend/backend checks, a windows build and publication of `cryptotape.exe`. the tag must match the versions in `frontend/package.json` and `build/windows/info.json`.
+pushing a version tag such as `v0.1.4` runs `.github/workflows/release.yml`: frontend/backend checks, a windows build and publication of `cryptotape.exe`. a normal branch push runs checks only; it does not publish a release. publication happens only after the tagged revision passes its checks and builds successfully.
+
+for the next release, update `frontend/package.json` and its lockfile with `npm --prefix frontend version 0.1.5 --no-git-tag-version`, then set both version fields in `build/windows/info.json` to `0.1.5`. commit and push those changes before tagging that commit:
+
+```sh
+git push origin main
+git tag -a v0.1.5 -m "cryptotape v0.1.5"
+git push origin v0.1.5
+```
+
+use a new matching version each time. the release workflow rejects a tag that differs from the application versions; a failed run does not publish a release.
 
 download the exe and run it. to update, close cryptotape and replace the old exe. settings, history and imported sounds live separately in `%APPDATA%\cryptotape` and survive replacement or relocation of the executable for the same windows user. there is no installer or in-app automatic updater.
+
+## performance
+
+```sh
+bash scripts/perf.sh
+```
+
+prints measurements directly in the terminal, with no result files. requires Go and bash; uses temporary SQLite databases and a local terminal fixture, without Binance access, native windows or a real terminal. usually takes about 15 seconds on an m3 pro with dependencies and builds cached. `wails3 task perf` runs the same command.
+
+- `ProcessMarkets`: time per tick with 750 markets and 2/10 rules sharing 1m/5m windows; `ticks/s` covers only the detector, with movement below alert thresholds.
+- `CombinedBookDecode`: time and allocations per JSON frame; includes the former two-pass decoder as a comparison.
+- `PersistAlertBatch`: time per committed batch of 1/64 alerts, using production SQLite settings.
+- `AlertPipelineBurst`: `ms/burst` from 750 price drops through detection, queues, SQLite commit and event-sink delivery of all 1500 alerts. baseline preparation is excluded; browser rendering, sound and terminals are excluded.
+- the final test verifies all 750 terminal commands with 100ms fixture responses, zero errors and the production 10-second freshness limit.
+
+lower `ns/op`, `ms/burst`, `B/op` and `allocs/op` is better; higher `ticks/s` and `alerts/s` is better. `B/op` measures allocated bytes, not retained memory. compare the three repetitions on the same machine, Go version and power settings, with other heavy work stopped. this is a regression baseline, not a physical screen-latency test. for longer runs: `bash scripts/perf.sh -benchtime=1s -count=5`. ordinary checks remain separate, without machine-dependent speed thresholds.
 
 ## signals
 
@@ -60,7 +86,7 @@ the default suite uses local HTTP/websocket fixtures and temporary SQLite databa
 - terminal success/failure without losing notification/history, and all 750 requests during a market crash;
 - overlay event delivery and the three-card limit.
 
-`.github/workflows/check.yml` runs backend checks on windows and macos and frontend checks on every push/pull request. the macos job also runs the race detector. these jobs run once the workflow is pushed to GitHub; a windows cross-build on macos does not prove that windows tests passed.
+`.github/workflows/check.yml` runs frontend/backend checks and a production build in one windows job on pushes to `main` and pull requests. newer commits cancel superseded checks. manual workflow runs also run the macos race detector; feature-branch pushes without a pull request do not start automatic checks. releases validate and build the tagged revision separately, reusing the frontend assets built during their checks. these jobs run once the workflow is pushed to GitHub; a windows cross-build on macos does not prove that windows tests passed.
 
 native overlay placement/focus over fullscreen apps, actual audio output, real terminal behavior and end-to-end latency still need release checks on windows 11. automated component tests cannot certify those operating-system integrations.
 

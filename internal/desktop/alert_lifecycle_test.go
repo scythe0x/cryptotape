@@ -12,7 +12,7 @@ import (
 	"cryptotape/internal/core"
 )
 
-func testController(t *testing.T, emit EventSink) (*Controller, string) {
+func testController(t testing.TB, emit EventSink) (*Controller, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "alerts.sqlite")
 	controller, err := NewController(path, emit)
