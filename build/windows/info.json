@@ -1,8 +1,8 @@
 {
-  "fixed": { "file_version": "0.1.2" },
+  "fixed": { "file_version": "0.1.3" },
   "info": {
     "0000": {
-      "ProductVersion": "0.1.2",
+      "ProductVersion": "0.1.3",
       "CompanyName": "cryptotape",
       "FileDescription": "fast Binance futures alerts",
       "LegalCopyright": "cryptotape",

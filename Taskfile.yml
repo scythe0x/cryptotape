@@ -31,7 +31,7 @@ tasks:
     dir: build/windows/nsis
     cmds:
       - wails3 generate webview2bootstrapper -dir .
-      - makensis -DARG_WAILS_AMD64_BINARY="{{.ROOT_DIR}}/build/bin/cryptotape.exe" project.nsi
+      - makensis -INPUTCHARSET UTF8 '-DARG_WAILS_AMD64_BINARY=..\..\bin\cryptotape.exe' project.nsi
 
   check:
     cmds:
