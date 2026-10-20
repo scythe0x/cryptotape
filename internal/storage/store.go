@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
 
@@ -51,6 +54,10 @@ func Open(path string) (*Store, error) {
 			return nil, err
 		}
 	}
+	if err = migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	store := &Store{db: db}
 	if err = store.seed(); err != nil {
 		db.Close()
@@ -69,8 +76,8 @@ func (s *Store) seed() error {
 	}
 	if count == 0 {
 		for _, rule := range []core.Rule{
-			{Name: "soft move", Percent: 3, WindowSeconds: 60, Sound: "chime", Enabled: true},
-			{Name: "strong move", Percent: 10, WindowSeconds: 300, Sound: "alarm", OpenTerminal: true, Enabled: true},
+			{Name: "soft move", Percent: 3, WindowSeconds: 60, Sound: "chime", Color: "#41c977", Volume: 1, MinQuoteVolume: 80_000_000, Terminals: []string{}},
+			{Name: "strong move", Percent: 10, WindowSeconds: 300, Sound: "alarm", Color: "#fa423e", Volume: 1, MinQuoteVolume: 80_000_000, Terminals: []string{"vataga"}},
 		} {
 			if _, err := s.SaveRule(rule); err != nil {
 				return err
@@ -86,7 +93,7 @@ func (s *Store) seed() error {
 }
 
 func (s *Store) Rules() ([]core.Rule, error) {
-	rows, err := s.db.Query(`SELECT id, name, percent, window_seconds, sound, open_terminal, enabled FROM rules ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, name, percent, window_seconds, sound, color, volume, min_quote_volume, terminals FROM rules ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +101,11 @@ func (s *Store) Rules() ([]core.Rule, error) {
 	rules := make([]core.Rule, 0)
 	for rows.Next() {
 		var rule core.Rule
-		if err := rows.Scan(&rule.ID, &rule.Name, &rule.Percent, &rule.WindowSeconds, &rule.Sound, &rule.OpenTerminal, &rule.Enabled); err != nil {
+		var terminals string
+		if err := rows.Scan(&rule.ID, &rule.Name, &rule.Percent, &rule.WindowSeconds, &rule.Sound, &rule.Color, &rule.Volume, &rule.MinQuoteVolume, &terminals); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(terminals), &rule.Terminals); err != nil {
 			return nil, err
 		}
 		rules = append(rules, rule)
@@ -104,20 +115,28 @@ func (s *Store) Rules() ([]core.Rule, error) {
 
 func (s *Store) SaveRule(rule core.Rule) (core.Rule, error) {
 	rule.Name = strings.TrimSpace(rule.Name)
-	if rule.Name == "" || len(rule.Name) > 60 || rule.Percent < 0.1 || rule.Percent > 100 || rule.WindowSeconds < 5 || rule.WindowSeconds > 600 || rule.Sound == "" {
+	if rule.Name == "" || utf8.RuneCountInString(rule.Name) > 60 || rule.Percent < 0.1 || rule.Percent > 100 || rule.WindowSeconds < 5 || rule.WindowSeconds > 600 || rule.Sound == "" || !validColor.MatchString(rule.Color) || !finite(rule.Percent) || !finite(rule.Volume) || rule.Volume < 0 || rule.Volume > 1 || !finite(rule.MinQuoteVolume) || rule.MinQuoteVolume < 0 || !validTerminals(rule.Terminals) {
 		return rule, errors.New("invalid alert rule")
 	}
+	if rule.Terminals == nil {
+		rule.Terminals = []string{}
+	}
+	terminals, err := json.Marshal(rule.Terminals)
+	if err != nil {
+		return rule, err
+	}
 	if rule.ID == 0 {
-		result, err := s.db.Exec(`INSERT INTO rules(name, percent, window_seconds, sound, open_terminal, enabled) VALUES (?, ?, ?, ?, ?, ?)`,
-			rule.Name, rule.Percent, rule.WindowSeconds, rule.Sound, rule.OpenTerminal, rule.Enabled)
+		result, err := s.db.Exec(`INSERT INTO rules(id,name,percent,window_seconds,sound,open_terminal,enabled,color,volume,min_quote_volume,terminals)
+ VALUES ((SELECT MAX(value)+1 FROM (SELECT COALESCE(MAX(id),0) AS value FROM rules UNION ALL SELECT COALESCE(MAX(rule_id),0) AS value FROM alerts)),?,?,?,?,?,1,?,?,?,?)`,
+			rule.Name, rule.Percent, rule.WindowSeconds, rule.Sound, len(rule.Terminals) > 0, rule.Color, rule.Volume, rule.MinQuoteVolume, string(terminals))
 		if err != nil {
 			return rule, err
 		}
 		rule.ID, err = result.LastInsertId()
 		return rule, err
 	}
-	result, err := s.db.Exec(`UPDATE rules SET name=?, percent=?, window_seconds=?, sound=?, open_terminal=?, enabled=? WHERE id=?`,
-		rule.Name, rule.Percent, rule.WindowSeconds, rule.Sound, rule.OpenTerminal, rule.Enabled, rule.ID)
+	result, err := s.db.Exec(`UPDATE rules SET name=?, percent=?, window_seconds=?, sound=?, open_terminal=?, enabled=1,color=?,volume=?,min_quote_volume=?,terminals=? WHERE id=?`,
+		rule.Name, rule.Percent, rule.WindowSeconds, rule.Sound, len(rule.Terminals) > 0, rule.Color, rule.Volume, rule.MinQuoteVolume, string(terminals), rule.ID)
 	if err != nil {
 		return rule, err
 	}
@@ -139,13 +158,20 @@ func (s *Store) Settings() (core.Settings, error) {
 	if err := s.db.QueryRow(`SELECT payload FROM settings WHERE id=1`).Scan(&payload); err != nil {
 		return settings, err
 	}
+	settings = core.DefaultSettings()
 	err := json.Unmarshal([]byte(payload), &settings)
 	return settings, err
 }
 
 func (s *Store) SaveSettings(settings core.Settings) error {
-	if settings.MinQuoteVolume < 0 || settings.CooldownSeconds < 0 || settings.CooldownSeconds > 3600 {
+	if settings.Language != "en" && settings.Language != "ru" {
+		return errors.New("unsupported interface language")
+	}
+	if settings.CooldownSeconds < 0 || settings.CooldownSeconds > 3600 {
 		return errors.New("invalid settings")
+	}
+	if settings.TigerPort < 1 || settings.TigerPort > 65535 || !validLinkGroup.MatchString(settings.TigerLinkGroup) {
+		return errors.New("invalid Tiger port or link group")
 	}
 	if settings.Proxy != "" {
 		host, port, err := net.SplitHostPort(settings.Proxy)
@@ -164,7 +190,7 @@ func (s *Store) SaveSettings(settings core.Settings) error {
 
 func (s *Store) InsertAlert(candidate core.Candidate) (core.Alert, error) {
 	status := "skipped"
-	if candidate.Rule.OpenTerminal {
+	if len(candidate.Rule.Terminals) > 0 {
 		status = "pending"
 	}
 	alert := core.Alert{
@@ -173,14 +199,18 @@ func (s *Store) InsertAlert(candidate core.Candidate) (core.Alert, error) {
 		Price: candidate.Price, SpreadPercent: candidate.SpreadPercent,
 		QuoteVolume: candidate.QuoteVolume, EventTimeMs: candidate.EventTime.UnixMilli(),
 		CreatedAtMs: time.Now().UnixMilli(), Sound: candidate.Rule.Sound,
-		OpenTerminal: candidate.Rule.OpenTerminal, TerminalStatus: status,
+		Color: candidate.Rule.Color, Volume: candidate.Rule.Volume, Terminals: append([]string{}, candidate.Rule.Terminals...), TerminalStatus: status,
+	}
+	terminals, err := json.Marshal(alert.Terminals)
+	if err != nil {
+		return alert, err
 	}
 	result, err := s.db.Exec(`INSERT INTO alerts(rule_id, rule_name, symbol, direction, change_percent, price, spread_percent,
-		quote_volume, event_time_ms, created_at_ms, sound, open_terminal, terminal_status, terminal_error)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
+		quote_volume, event_time_ms, created_at_ms, sound, open_terminal, terminal_status, terminal_error,color,volume,terminals)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '',?,?,?)`,
 		alert.RuleID, alert.RuleName, alert.Symbol, alert.Direction, alert.ChangePercent, alert.Price,
 		alert.SpreadPercent, alert.QuoteVolume, alert.EventTimeMs, alert.CreatedAtMs,
-		alert.Sound, alert.OpenTerminal, alert.TerminalStatus)
+		alert.Sound, len(alert.Terminals) > 0, alert.TerminalStatus, alert.Color, alert.Volume, string(terminals))
 	if err != nil {
 		return alert, err
 	}
@@ -201,24 +231,12 @@ func (s *Store) ListAlerts(ctx context.Context, before int64, limit int) ([]core
 		before = 1<<63 - 1
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id, rule_id, rule_name, symbol, direction, change_percent, price,
-		spread_percent, quote_volume, event_time_ms, created_at_ms, sound, open_terminal,
+		spread_percent, quote_volume, event_time_ms, created_at_ms, sound, color, volume, terminals,
 		terminal_status, terminal_error FROM alerts WHERE id < ? ORDER BY id DESC LIMIT ?`, before, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	alerts := make([]core.Alert, 0, limit)
-	for rows.Next() {
-		var alert core.Alert
-		if err := rows.Scan(&alert.ID, &alert.RuleID, &alert.RuleName, &alert.Symbol, &alert.Direction,
-			&alert.ChangePercent, &alert.Price, &alert.SpreadPercent, &alert.QuoteVolume,
-			&alert.EventTimeMs, &alert.CreatedAtMs, &alert.Sound, &alert.OpenTerminal,
-			&alert.TerminalStatus, &alert.TerminalError); err != nil {
-			return nil, err
-		}
-		alerts = append(alerts, alert)
-	}
-	return alerts, rows.Err()
+	return scanAlerts(rows, limit)
 }
 
 func (s *Store) AlertsAfter(ctx context.Context, after int64, limit int) ([]core.Alert, error) {
@@ -226,24 +244,12 @@ func (s *Store) AlertsAfter(ctx context.Context, after int64, limit int) ([]core
 		limit = 100
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id, rule_id, rule_name, symbol, direction, change_percent, price,
-		spread_percent, quote_volume, event_time_ms, created_at_ms, sound, open_terminal,
+		spread_percent, quote_volume, event_time_ms, created_at_ms, sound, color, volume, terminals,
 		terminal_status, terminal_error FROM alerts WHERE id > ? ORDER BY id ASC LIMIT ?`, after, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	alerts := make([]core.Alert, 0, limit)
-	for rows.Next() {
-		var alert core.Alert
-		if err := rows.Scan(&alert.ID, &alert.RuleID, &alert.RuleName, &alert.Symbol, &alert.Direction,
-			&alert.ChangePercent, &alert.Price, &alert.SpreadPercent, &alert.QuoteVolume,
-			&alert.EventTimeMs, &alert.CreatedAtMs, &alert.Sound, &alert.OpenTerminal,
-			&alert.TerminalStatus, &alert.TerminalError); err != nil {
-			return nil, err
-		}
-		alerts = append(alerts, alert)
-	}
-	return alerts, rows.Err()
+	return scanAlerts(rows, limit)
 }
 
 func DefaultPath() (string, error) {
@@ -252,4 +258,42 @@ func DefaultPath() (string, error) {
 		return "", fmt.Errorf("find user config directory: %w", err)
 	}
 	return filepath.Join(root, "cryptotape", "cryptotape.sqlite"), nil
+}
+
+var validColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+var validLinkGroup = regexp.MustCompile(`^([A-Z]|[0-9]|1[0-8])$`)
+
+func finite(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }
+func validTerminals(ids []string) bool {
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if (id != "vataga" && id != "tiger") || seen[id] {
+			return false
+		}
+		seen[id] = true
+	}
+	return true
+}
+
+func scanAlerts(rows *sql.Rows, limit int) ([]core.Alert, error) {
+	defer rows.Close()
+	alerts := make([]core.Alert, 0, limit)
+	for rows.Next() {
+		var alert core.Alert
+		var terminals string
+		if err := rows.Scan(&alert.ID, &alert.RuleID, &alert.RuleName, &alert.Symbol, &alert.Direction,
+			&alert.ChangePercent, &alert.Price, &alert.SpreadPercent, &alert.QuoteVolume,
+			&alert.EventTimeMs, &alert.CreatedAtMs, &alert.Sound, &alert.Color, &alert.Volume, &terminals,
+			&alert.TerminalStatus, &alert.TerminalError); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(terminals), &alert.Terminals); err != nil {
+			return nil, err
+		}
+		if alert.Terminals == nil {
+			alert.Terminals = []string{}
+		}
+		alerts = append(alerts, alert)
+	}
+	return alerts, rows.Err()
 }

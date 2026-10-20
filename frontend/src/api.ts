@@ -1,5 +1,8 @@
-import { Call, Events } from '@wailsio/runtime'
+import { Call, Events, Clipboard } from '@wailsio/runtime'
 import { z } from 'zod'
+
+export const terminalSchema = z.enum(['vataga', 'tiger'])
+export type TerminalID = z.infer<typeof terminalSchema>
 
 export const ruleSchema = z.object({
   id: z.number(),
@@ -7,15 +10,21 @@ export const ruleSchema = z.object({
   percent: z.number(),
   windowSeconds: z.number(),
   sound: z.string(),
-  openTerminal: z.boolean(),
-  enabled: z.boolean(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  volume: z.number().min(0).max(1),
+  minQuoteVolume: z.number().nonnegative(),
+  terminals: z.array(terminalSchema),
 })
 
+export const languageSchema = z.enum(['en', 'ru'])
+
 export const settingsSchema = z.object({
+  language: languageSchema,
   proxy: z.string(),
-  minQuoteVolume: z.number(),
   cooldownSeconds: z.number(),
   monitorId: z.string(),
+  tigerPort: z.number(),
+  tigerLinkGroup: z.string(),
 })
 
 export const alertSchema = z.object({
@@ -31,7 +40,9 @@ export const alertSchema = z.object({
   eventTimeMs: z.number(),
   createdAtMs: z.number(),
   sound: z.string(),
-  openTerminal: z.boolean(),
+  color: z.string(),
+  volume: z.number(),
+  terminals: z.array(terminalSchema),
   terminalStatus: z.string(),
   terminalError: z.string(),
 })
@@ -43,6 +54,7 @@ export const healthSchema = z.object({
   symbols: z.number(),
   ready: z.number(),
   updatedAtMs: z.number(),
+  pingMs: z.number().nullable(),
 })
 
 const snapshotSchema = z.object({
@@ -85,13 +97,15 @@ export const desktop = {
   listAlerts: (before: number, limit = 100) => invoke('ListAlerts', z.array(alertSchema), before, limit),
   alertsAfter: (after: number, limit = 200) => invoke('AlertsAfter', z.array(alertSchema), after, limit),
   sessionAlerts: () => invoke('SessionAlerts', z.array(alertSchema)),
-  openTerminal: (id: number, symbol: string) => command('OpenTerminal', id, symbol),
+  openTerminal: (id: number, symbol: string, terminal: TerminalID) => command('OpenTerminal', id, symbol, terminal),
+  openTerminals: (id: number, symbol: string, terminals: TerminalID[]) => invoke('OpenTerminals', z.object({ opened: z.number(), error: z.string() }), id, symbol, terminals),
+  copySymbol: (symbol: string) => Clipboard.SetText(symbol),
   soundIds: () => invoke('SoundIDs', z.array(z.string())),
   importSound: (name: string, extension: string, encoded: string) =>
     invoke('ImportSound', z.string(), name, extension, encoded),
-  previewSound: (id: string) => command('PreviewSound', id),
+  previewSound: (id: string, volume: number) => command('PreviewSound', id, volume),
   monitors: () => invoke('Monitors', z.array(monitorSchema)),
-  hideOverlay: () => command('HideOverlay'),
+  hideOverlay: (afterId: number) => command('HideOverlay', afterId),
 }
 
 export function listen<T>(name: string, schema: z.ZodType<T>, handle: (value: T) => void): () => void {
@@ -101,9 +115,41 @@ export function listen<T>(name: string, schema: z.ZodType<T>, handle: (value: T)
   })
 }
 
+function alertBatches(handle: (alerts: Alert[], updates: AlertUpdate[]) => void): () => void {
+  const pending = new Map<number, Alert>()
+  const updates = new Map<number, AlertUpdate>()
+  let frame = 0
+  let fallback = 0
+
+  function flush() {
+    window.cancelAnimationFrame(frame)
+    window.clearTimeout(fallback)
+    frame = 0
+    const alerts = [...pending.values()]
+    const changes = [...updates.values()]
+    pending.clear()
+    updates.clear()
+    handle(alerts, changes)
+  }
+
+  function schedule() {
+    if (frame) return
+    frame = window.requestAnimationFrame(flush)
+    fallback = window.setTimeout(flush, 50)
+  }
+
+  const stopNew = listen('alert:new', alertSchema, (alert) => { pending.set(alert.id, alert); schedule() })
+  const stopUpdate = listen('alert:update', alertUpdateSchema, (update) => { updates.set(update.id, update); schedule() })
+  return () => {
+    stopNew()
+    stopUpdate()
+    window.cancelAnimationFrame(frame)
+    window.clearTimeout(fallback)
+  }
+}
+
 export const events = {
-  alert: (handle: (alert: Alert) => void) => listen('alert:new', alertSchema, handle),
-  update: (handle: (update: AlertUpdate) => void) => listen('alert:update', alertUpdateSchema, handle),
+  alerts: alertBatches,
   health: (handle: (health: Health) => void) => listen('health', healthSchema, handle),
   rules: (handle: (rules: Rule[]) => void) => listen('rules:changed', z.array(ruleSchema), handle),
   settings: (handle: (settings: Settings) => void) => listen('settings:changed', settingsSchema, handle),

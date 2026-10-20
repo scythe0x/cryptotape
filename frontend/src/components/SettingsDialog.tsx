@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import * as Tabs from '@radix-ui/react-tabs'
-import { Play, Upload, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import type { Monitor, Rule, Settings } from '../api'
-import { desktop } from '../api'
+import { desktop, languageSchema } from '../api'
 import { Button, Input } from './ui'
+import { HelpTip } from './HelpTip'
+import { useTranslation } from '../i18n'
+import { localizeDiagnostic } from '../i18n/diagnostics'
 import { RulesSettings } from './RulesSettings'
 
 type Props = {
@@ -14,27 +17,47 @@ type Props = {
   rules: Rule[]
   sounds: string[]
   onSaved: () => void
-  onImported: (id: string) => void
 }
 
-export function SettingsDialog({ open, onOpenChange, settings, rules, sounds, onSaved, onImported }: Props) {
+export function SettingsDialog(props: Props) {
+  return (
+    <Dialog.Root open={props.open} onOpenChange={props.onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="dialog-overlay" />
+        <Dialog.Content className="dialog-content settings-dialog">
+          <SettingsContent {...props} />
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
+function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved }: Props) {
+  const { t } = useTranslation()
   const [draft, setDraft] = useState(settings)
   const [monitors, setMonitors] = useState<Monitor[]>([])
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
 
   useEffect(() => {
     if (!open) return
-    void desktop.monitors().then(setMonitors).catch((error: unknown) => setMessage(String(error)))
+    void desktop
+      .monitors()
+      .then(setMonitors)
+      .catch((error: unknown) => setMessage(String(error)))
   }, [open])
 
   async function testProxy() {
+    setTesting(true)
     setMessage('testing Binance route…')
     try {
       await desktop.testProxy(draft.proxy)
       setMessage('Binance connection is working')
     } catch (error) {
       setMessage(`connection failed: ${String(error)}`)
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -52,91 +75,126 @@ export function SettingsDialog({ open, onOpenChange, settings, rules, sounds, on
     }
   }
 
-  async function importSound(file: File | undefined) {
-    if (!file) return
-    if (file.size > 2 * 1024 * 1024) {
-      setMessage('sound must be smaller than 2 MB')
-      return
-    }
-    const extension = file.name.toLowerCase().endsWith('.wav') ? '.wav' : '.mp3'
-    try {
-      const encoded = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
-        reader.onerror = () => reject(reader.error)
-        reader.readAsDataURL(file)
-      })
-      const id = await desktop.importSound(file.name.slice(0, -extension.length), extension, encoded)
-      onImported(id)
-      setMessage('sound imported')
-    } catch (error) {
-      setMessage(String(error))
-    }
-  }
-
-  return <Dialog.Root open={open} onOpenChange={onOpenChange}>
-    <Dialog.Portal>
-      <Dialog.Overlay className="dialog-overlay" />
-      <Dialog.Content className="dialog-content settings-dialog">
-        <div className="dialog-heading">
-          <Dialog.Title>settings</Dialog.Title>
-          <Dialog.Close asChild><Button size="icon" variant="ghost" aria-label="close"><X size={15} /></Button></Dialog.Close>
-        </div>
-        <Dialog.Description className="sr-only">configure market routing and notifications</Dialog.Description>
-        <Tabs.Root defaultValue="alerts">
-          <Tabs.List className="settings-tabs" aria-label="settings sections">
-            <Tabs.Trigger value="alerts">alerts</Tabs.Trigger>
-            <Tabs.Trigger value="general">general</Tabs.Trigger>
-          </Tabs.List>
-          <Tabs.Content value="alerts" className="settings-tab-content">
-            <RulesSettings rules={rules} sounds={sounds} onSaved={onSaved} />
-          </Tabs.Content>
-          <Tabs.Content value="general">
-        <form onSubmit={save} className="form-stack">
-          <label>http connect proxy
-            <div className="input-row">
-              <Input value={draft.proxy} placeholder="ip:port (optional)"
-                onChange={(event) => setDraft({ ...draft, proxy: event.target.value })} />
-              <Button type="button" onClick={() => void testProxy()}>test</Button>
-            </div>
-          </label>
-          <div className="form-grid">
-            <label>min 24h turnover, usd<Input type="number" min="0" step="1000000" value={draft.minQuoteVolume}
-              onChange={(event) => setDraft({ ...draft, minQuoteVolume: Number(event.target.value) })} /></label>
-            <label>rule cooldown, sec<Input type="number" min="0" max="3600" value={draft.cooldownSeconds}
-              onChange={(event) => setDraft({ ...draft, cooldownSeconds: Number(event.target.value) })} /></label>
-          </div>
-          <label>notification monitor
-            <select className="input" value={draft.monitorId}
-              onChange={(event) => setDraft({ ...draft, monitorId: event.target.value })}>
-              <option value="">primary monitor</option>
-              {monitors.map((monitor) => <option value={monitor.id} key={monitor.id}>
-                {monitor.name || monitor.id}{monitor.primary ? ' · primary' : ''}
-              </option>)}
-            </select>
-          </label>
-          <div className="sound-import">
-            <strong>sounds</strong>
-            <label className="button button-secondary import-button"><Upload size={13} /> import
-              <input type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" hidden
-                onChange={(event) => void importSound(event.target.files?.[0])} />
+  return (
+    <>
+      <div className="dialog-heading">
+        <Dialog.Title>{t('settings')}</Dialog.Title>
+        <Dialog.Close asChild>
+          <Button size="icon" variant="ghost" aria-label={t('close')}>
+            <X size={15} />
+          </Button>
+        </Dialog.Close>
+      </div>
+      <Dialog.Description className="sr-only">{t('settingsDescription')}</Dialog.Description>
+      <Tabs.Root defaultValue="alerts">
+        <Tabs.List className="settings-tabs" aria-label={t('settingsSections')}>
+          <Tabs.Trigger value="alerts">{t('alerts')}</Tabs.Trigger>
+          <Tabs.Trigger value="general">{t('general')}</Tabs.Trigger>
+        </Tabs.List>
+        <Tabs.Content value="alerts" className="settings-tab-content">
+          <RulesSettings rules={rules} sounds={sounds} onSaved={onSaved} />
+        </Tabs.Content>
+        <Tabs.Content value="general">
+          <form onSubmit={save} className="form-stack">
+            <label>
+              {t('language')}
+              <select
+                className="input"
+                value={draft.language}
+                onChange={(event) => setDraft({ ...draft, language: languageSchema.parse(event.target.value) })}
+              >
+                <option value="en">English</option>
+                <option value="ru">Русский</option>
+              </select>
             </label>
-          </div>
-          <div className="sound-chips">
-            {sounds.map((sound) => <button type="button" key={sound}
-              onClick={() => void desktop.previewSound(sound)} title={`play ${sound}`}>
-              <Play size={10} /> {sound.startsWith('custom:') ? sound.slice(7).replace(/^\d+-/, '') : sound}
-            </button>)}
-          </div>
-          {message && <div className={message.includes('failed') ? 'inline-error' : 'muted'}>{message}</div>}
-          <div className="dialog-actions">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>cancel</Button>
-            <Button type="submit" variant="primary" disabled={saving}>{saving ? 'saving…' : 'save settings'}</Button>
-          </div>
-        </form>
-          </Tabs.Content>
-        </Tabs.Root>
-      </Dialog.Content>
-    </Dialog.Portal>
-  </Dialog.Root>
+            <label>
+              {t('proxy')}
+              <div className="input-row">
+                <Input
+                  value={draft.proxy}
+                  disabled={testing}
+                  placeholder={t('proxyPlaceholder')}
+                  onChange={(event) => setDraft({ ...draft, proxy: event.target.value })}
+                />
+                <Button type="button" disabled={testing} onClick={() => void testProxy()}>
+                  {testing ? t('testing') : t('test')}
+                </Button>
+              </div>
+            </label>
+            <div className="cooldown-field">
+              <div className="label-with-help">
+                <label htmlFor="cooldown-seconds">{t('cooldown')}</label>
+                <HelpTip label={t('cooldownHelpLabel')}>{t('cooldownHelp')}</HelpTip>
+              </div>
+              <Input
+                id="cooldown-seconds"
+                type="number"
+                min="0"
+                max="3600"
+                value={draft.cooldownSeconds}
+                onChange={(event) => setDraft({ ...draft, cooldownSeconds: Number(event.target.value) })}
+              />
+            </div>
+            <div className="form-grid">
+              <label>
+                {t('tigerPort')}
+                <Input
+                  type="number"
+                  required
+                  min="1"
+                  max="65535"
+                  value={draft.tigerPort}
+                  onChange={(event) => setDraft({ ...draft, tigerPort: Number(event.target.value) })}
+                />
+              </label>
+              <label>
+                {t('tigerGroup')}
+                <select
+                  className="input"
+                  value={draft.tigerLinkGroup}
+                  onChange={(event) => setDraft({ ...draft, tigerLinkGroup: event.target.value })}
+                >
+                  {[
+                    ...Array.from({ length: 26 }, (_, index) => String.fromCharCode(65 + index)),
+                    ...Array.from({ length: 19 }, (_, index) => String(index)),
+                  ].map((group) => (
+                    <option key={group} value={group}>
+                      {group}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label>
+              {t('monitor')}
+              <select
+                className="input"
+                value={draft.monitorId}
+                onChange={(event) => setDraft({ ...draft, monitorId: event.target.value })}
+              >
+                <option value="">{t('primaryMonitor')}</option>
+                {monitors.map((monitor) => (
+                  <option value={monitor.id} key={monitor.id}>
+                    {monitor.name || monitor.id}
+                    {monitor.primary ? ` · ${t('primary')}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {message && (
+              <div className={message.includes('failed') ? 'inline-error' : 'muted'}>{localizeDiagnostic(message)}</div>
+            )}
+            <div className="dialog-actions">
+              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+                {t('cancel')}
+              </Button>
+              <Button type="submit" variant="primary" disabled={saving}>
+                {saving ? t('saving') : t('saveSettings')}
+              </Button>
+            </div>
+          </form>
+        </Tabs.Content>
+      </Tabs.Root>
+    </>
+  )
 }

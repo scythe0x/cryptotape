@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,6 +33,7 @@ type Callbacks struct {
 	Volume func(map[string]float64)
 	Gap    func([]string)
 	Health func(core.Health)
+	Ping   func(time.Duration)
 }
 
 type Feed struct {
@@ -49,6 +49,7 @@ type Feed struct {
 	volumes      map[string]float64
 	eligible     map[string]bool
 	shardMembers [][]string
+	symbolShard  map[string]int
 	updates      []chan struct{}
 	volumeOK     atomic.Bool
 	clockOffset  atomic.Int64
@@ -115,6 +116,7 @@ func (f *Feed) Run(ctx context.Context) error {
 	f.volumes = volumes
 	f.eligible = make(map[string]bool)
 	f.shardMembers = make([][]string, f.shards)
+	f.symbolShard = make(map[string]int, len(symbols))
 	f.updates = make([]chan struct{}, f.shards)
 	f.volumeReady = make(chan struct{})
 	for shard := range f.updates {
@@ -123,6 +125,7 @@ func (f *Feed) Run(ctx context.Context) error {
 	for index, symbol := range symbols {
 		f.known[symbol] = true
 		f.shardMembers[index/shardSize] = append(f.shardMembers[index/shardSize], symbol)
+		f.symbolShard[symbol] = index / shardSize
 		if volumes[symbol] >= f.minVolume {
 			f.eligible[symbol] = true
 		}
@@ -149,38 +152,24 @@ func (f *Feed) Run(ctx context.Context) error {
 			f.bookLoop(runCtx, shard)
 		}(shard)
 	}
-	changes := make(chan error, 1)
+	wg.Add(1)
 	go func() {
-		ticker := time.NewTicker(15 * time.Minute)
+		defer wg.Done()
+		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-runCtx.Done():
 				return
 			case <-ticker.C:
-				if err := f.syncClock(runCtx); err != nil {
-					f.status("degraded", "clock sync: "+err.Error())
-					continue
-				}
-				current, err := f.loadSymbols(runCtx)
-				if err != nil {
-					f.status("degraded", "symbol refresh: "+err.Error())
-					continue
-				}
-				if !slices.Equal(current, symbols) {
-					changes <- errors.New("Binance symbol list changed")
-					cancel()
-					return
+				if err := f.refresh(runCtx); err != nil {
+					f.status("degraded", "market refresh: "+err.Error())
 				}
 			}
 		}
 	}()
 	wg.Wait()
-	select {
-	case err := <-changes:
-		return err
-	default:
-	}
+
 	return ctx.Err()
 }
 
@@ -265,7 +254,10 @@ func (f *Feed) get(ctx context.Context, path string, out any) error {
 func (f *Feed) bookLoop(ctx context.Context, shard int) {
 	backoff := time.Second
 	for ctx.Err() == nil {
-		f.cb.Gap(f.shardMembers[shard])
+		f.mu.Lock()
+		members := append([]string(nil), f.shardMembers[shard]...)
+		f.mu.Unlock()
+		f.cb.Gap(members)
 		connectedAt := time.Now()
 		err := f.readBook(ctx, shard)
 		if ctx.Err() != nil {
@@ -309,11 +301,10 @@ func (f *Feed) readBook(ctx context.Context, shard int) error {
 	writerCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go f.manageSubscriptions(writerCtx, connection, shard, subscribed)
-	go pingUntilDone(ctx, connection)
+	go pingUntilDone(ctx, connection, f.cb.Ping)
 	for {
-		readCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		_, raw, err := connection.Read(readCtx)
-		cancel()
+		// empty shards can be idle; ping/pong checks transport liveness.
+		_, raw, err := connection.Read(ctx)
 		if err != nil {
 			return err
 		}
@@ -330,6 +321,12 @@ func (f *Feed) readBook(ctx context.Context, shard int) error {
 		bid, bidErr := strconv.ParseFloat(tick.Bid, 64)
 		ask, askErr := strconv.ParseFloat(tick.Ask, 64)
 		if bidErr != nil || askErr != nil || !f.volumeOK.Load() {
+			continue
+		}
+		f.mu.Lock()
+		eligible := f.eligible[tick.Symbol]
+		f.mu.Unlock()
+		if !eligible {
 			continue
 		}
 		received := time.Now()
@@ -379,7 +376,7 @@ func (f *Feed) readVolume(ctx context.Context) error {
 	f.volumeOK.Store(true)
 	f.volumeOnce.Do(func() { close(f.volumeReady) })
 	f.status("warming", "waiting for rule windows")
-	go pingUntilDone(ctx, connection)
+	go pingUntilDone(ctx, connection, f.cb.Ping)
 	for {
 		readCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		_, raw, err := connection.Read(readCtx)
@@ -432,8 +429,7 @@ func (f *Feed) updateEligibility(values map[string]float64) {
 			continue
 		}
 		f.eligible[symbol] = wanted
-		index := sort.SearchStrings(f.symbols, symbol)
-		changed[index/shardSize] = true
+		changed[f.symbolShard[symbol]] = true
 	}
 	f.mu.Unlock()
 	for shard := range changed {
@@ -548,21 +544,26 @@ func writeSubscription(ctx context.Context, connection *websocket.Conn, method s
 	return websocketWriteJSON(writeCtx, connection, request)
 }
 
-func pingUntilDone(ctx context.Context, connection *websocket.Conn) {
-	ticker := time.NewTicker(15 * time.Second)
+func pingUntilDone(ctx context.Context, connection *websocket.Conn, report func(time.Duration)) {
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
+		pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		started := time.Now()
+		err := connection.Ping(pingCtx)
+		elapsed := time.Since(started)
+		cancel()
+		if err != nil {
+			connection.CloseNow()
+			return
+		}
+		if report != nil {
+			report(elapsed)
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err := connection.Ping(pingCtx)
-			cancel()
-			if err != nil {
-				connection.CloseNow()
-				return
-			}
 		}
 	}
 }
@@ -576,5 +577,101 @@ func pause(ctx context.Context, duration time.Duration) bool {
 		return false
 	case <-timer.C:
 		return true
+	}
+}
+
+func (f *Feed) SetMinimumVolume(minimum float64) {
+	f.mu.Lock()
+	f.minVolume = minimum
+	changed := make(map[int]bool)
+	for symbol, volume := range f.volumes {
+		if !f.known[symbol] {
+			continue
+		}
+		wanted := volume >= minimum
+		if f.eligible[symbol] != wanted {
+			f.eligible[symbol] = wanted
+			changed[f.symbolShard[symbol]] = true
+		}
+	}
+	f.mu.Unlock()
+	for shard := range changed {
+		select {
+		case f.updates[shard] <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (f *Feed) refresh(ctx context.Context) error {
+	if err := f.syncClock(ctx); err != nil {
+		return err
+	}
+	symbols, err := f.loadSymbols(ctx)
+	if err != nil {
+		return err
+	}
+	volumes, err := f.loadVolumes(ctx)
+	if err != nil {
+		return err
+	}
+	f.refreshSymbols(symbols)
+	f.cb.Volume(volumes)
+	f.updateEligibility(volumes)
+	return nil
+}
+
+func (f *Feed) refreshSymbols(symbols []string) {
+	f.mu.Lock()
+	next := make(map[string]bool, len(symbols))
+	for _, symbol := range symbols {
+		next[symbol] = true
+	}
+	var removed []string
+	for symbol := range f.known {
+		if !next[symbol] {
+			removed = append(removed, symbol)
+			delete(f.volumes, symbol)
+			delete(f.eligible, symbol)
+		}
+	}
+	for shard, members := range f.shardMembers {
+		kept := make([]string, 0, len(members))
+		for _, symbol := range members {
+			if next[symbol] {
+				kept = append(kept, symbol)
+			}
+		}
+		f.shardMembers[shard] = kept
+	}
+	for _, symbol := range symbols {
+		if f.known[symbol] {
+			continue
+		}
+		target := 0
+		for shard := range f.shardMembers {
+			if len(f.shardMembers[shard]) < len(f.shardMembers[target]) {
+				target = shard
+			}
+		}
+		f.shardMembers[target] = append(f.shardMembers[target], symbol)
+	}
+	f.symbolShard = make(map[string]int, len(symbols))
+	for shard, members := range f.shardMembers {
+		for _, symbol := range members {
+			f.symbolShard[symbol] = shard
+		}
+	}
+	f.known = next
+	f.symbols = append([]string(nil), symbols...)
+	f.mu.Unlock()
+	if len(removed) > 0 {
+		f.cb.Gap(removed)
+	}
+	for _, update := range f.updates {
+		select {
+		case update <- struct{}{}:
+		default:
+		}
 	}
 }

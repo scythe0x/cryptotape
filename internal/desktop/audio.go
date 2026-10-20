@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -25,11 +26,13 @@ var builtinSounds embed.FS
 
 const sampleRate = 44100
 
-var builtinIDs = []string{"bell", "chime", "notification", "alarm", "beep"}
+var builtinIDs = []string{"none", "bell", "chime", "notification", "alarm", "beep"}
 
 type Audio struct {
 	mu      sync.RWMutex
 	context *oto.Context
+	player  *oto.Player
+	latest  int64
 	sounds  map[string][]byte
 	dir     string
 }
@@ -90,7 +93,7 @@ func (a *Audio) Has(id string) bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	_, ok := a.sounds[id]
-	return ok
+	return id == "none" || ok
 }
 
 func (a *Audio) Import(name, extension, encoded string) (string, error) {
@@ -130,26 +133,50 @@ func (a *Audio) Import(name, extension, encoded string) (string, error) {
 	return id, nil
 }
 
-func (a *Audio) Play(id string) error {
+func (a *Audio) Play(id string, volume float64) error {
+	return a.play(id, 0, volume)
+}
+
+func (a *Audio) PlayAlert(alertID int64, sound string, volume float64) error {
+	return a.play(sound, alertID, volume)
+}
+
+func (a *Audio) play(id string, alertID int64, volume float64) error {
+	if math.IsNaN(volume) || math.IsInf(volume, 0) || volume < 0 || volume > 1 {
+		return errors.New("invalid volume")
+	}
 	a.mu.RLock()
 	pcm, exists := a.sounds[id]
 	a.mu.RUnlock()
-	if !exists {
+	if !exists && id != "none" {
 		return errors.New("unknown sound")
 	}
-	if err := a.Warm(); err != nil {
-		return err
+	if id != "none" {
+		if err := a.Warm(); err != nil {
+			return err
+		}
 	}
 	a.mu.Lock()
-	player := a.context.NewPlayer(bytes.NewReader(pcm))
-	a.mu.Unlock()
-	player.Play()
-	go func() {
-		for player.IsPlaying() {
-			time.Sleep(40 * time.Millisecond)
+	defer a.mu.Unlock()
+	if alertID > 0 && alertID <= a.latest {
+		return nil
+	}
+	if alertID > 0 {
+		a.latest = alertID
+	}
+	if a.player != nil {
+		a.player.Pause()
+		if err := a.player.Close(); err != nil {
+			slog.Warn("stop previous sound", "error", err)
 		}
-		_ = player.Close()
-	}()
+	}
+	a.player = nil
+	if id == "none" {
+		return nil
+	}
+	a.player = a.context.NewPlayer(bytes.NewReader(pcm))
+	a.player.SetVolume(volume)
+	a.player.Play()
 	return nil
 }
 
@@ -169,6 +196,15 @@ func (a *Audio) Warm() error {
 			return err
 		}
 		a.context = context
+	}
+	return nil
+}
+
+func (a *Audio) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.player != nil {
+		return a.player.Close()
 	}
 	return nil
 }

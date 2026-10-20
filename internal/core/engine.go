@@ -20,6 +20,16 @@ type symbolState struct {
 	rules   map[int64]*ruleState
 }
 
+func (s *symbolState) resetHistory() {
+	s.last = time.Time{}
+	s.price = 0
+	s.bucket = 0
+	s.windows = make(map[int]*window)
+	for _, rule := range s.rules {
+		rule.up, rule.down = false, false
+	}
+}
+
 type Engine struct {
 	mu       sync.Mutex
 	rules    []Rule
@@ -38,9 +48,32 @@ func NewEngine(rules []Rule, settings Settings) *Engine {
 func (e *Engine) Configure(rules []Rule, settings Settings) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	previous := make(map[int64]Rule, len(e.rules))
+	for _, rule := range e.rules {
+		previous[rule.ID] = rule
+	}
+	current := make(map[int64]Rule, len(rules))
+	windows := make(map[int]bool)
+	for _, rule := range rules {
+		current[rule.ID] = rule
+		windows[rule.WindowSeconds] = true
+	}
+	for _, symbol := range e.symbols {
+		for id := range symbol.rules {
+			oldRule := previous[id]
+			next, exists := current[id]
+			if !exists || oldRule.Percent != next.Percent || oldRule.WindowSeconds != next.WindowSeconds {
+				delete(symbol.rules, id)
+			}
+		}
+		for seconds := range symbol.windows {
+			if !windows[seconds] {
+				delete(symbol.windows, seconds)
+			}
+		}
+	}
 	e.rules = append([]Rule(nil), rules...)
 	e.settings = settings
-	// existing price history remains valid; each new rule keeps its own edge state.
 }
 
 func (e *Engine) SetVolumes(volumes map[string]float64) {
@@ -55,34 +88,34 @@ func (e *Engine) Reset(symbols []string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for _, symbol := range symbols {
-		delete(e.symbols, symbol)
+		if state := e.symbols[symbol]; state != nil {
+			state.resetHistory()
+		}
 	}
 }
 
 func (e *Engine) ResetAll() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.symbols = make(map[string]*symbolState)
+	for _, state := range e.symbols {
+		state.resetHistory()
+	}
 }
 
 func (e *Engine) ReadyCount(now time.Time) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	shortest := 0
-	for _, rule := range e.rules {
-		if rule.Enabled && (shortest == 0 || rule.WindowSeconds < shortest) {
-			shortest = rule.WindowSeconds
-		}
-	}
-	if shortest == 0 {
-		return 0
-	}
 	count := 0
 	for symbol, state := range e.symbols {
-		w := state.windows[shortest]
-		if w != nil && now.Sub(w.started) >= time.Duration(shortest)*time.Second &&
-			now.Sub(state.last) <= 10*time.Second && e.volumes[symbol] >= e.settings.MinQuoteVolume {
-			count++
+		if now.Sub(state.last) > 10*time.Second {
+			continue
+		}
+		for _, rule := range e.rules {
+			w := state.windows[rule.WindowSeconds]
+			if w != nil && e.volumes[symbol] >= rule.MinQuoteVolume {
+				count++
+				break
+			}
 		}
 	}
 	return count
@@ -109,9 +142,12 @@ func (e *Engine) Process(q Quote) []Candidate {
 		return nil
 	}
 	state := e.symbols[q.Symbol]
-	if state == nil || (!state.last.IsZero() && q.Received.Sub(state.last) > 10*time.Second) {
+	if state == nil {
 		state = &symbolState{windows: make(map[int]*window), rules: make(map[int64]*ruleState)}
 		e.symbols[q.Symbol] = state
+	}
+	if !state.last.IsZero() && q.Received.Sub(state.last) > 10*time.Second {
+		state.resetHistory()
 	}
 	if q.Received.Before(state.last) {
 		return nil
@@ -128,18 +164,12 @@ func (e *Engine) Process(q Quote) []Candidate {
 	volume := e.volumes[q.Symbol]
 	var candidates []Candidate
 	for _, rule := range e.rules {
-		if !rule.Enabled {
-			continue
-		}
 		w := state.windows[rule.WindowSeconds]
 		if w == nil {
 			w = newWindow(time.Duration(rule.WindowSeconds) * time.Second)
 			state.windows[rule.WindowSeconds] = w
 		}
 		w.add(q.Received, price)
-		if q.Received.Sub(w.started) < time.Duration(rule.WindowSeconds)*time.Second {
-			continue
-		}
 		low, high := w.bounds()
 		up := (price/low - 1) * 100
 		down := (price/high - 1) * 100
@@ -148,11 +178,14 @@ func (e *Engine) Process(q Quote) []Candidate {
 			previousState = &ruleState{}
 			state.rules[rule.ID] = previousState
 		}
-		upNow, downNow := up >= rule.Percent, down <= -rule.Percent
+		// tolerate floating-point error far below a tradable price increment.
+		const thresholdTolerance = 1e-9
+		upNow := up+thresholdTolerance >= rule.Percent
+		downNow := down-thresholdTolerance <= -rule.Percent
 		crossUp := upNow && !previousState.up && price > previous
 		crossDown := downNow && !previousState.down && price < previous
 		previousState.up, previousState.down = upNow, downNow
-		if volume < e.settings.MinQuoteVolume || q.Received.Before(previousState.cooldown) {
+		if volume < rule.MinQuoteVolume || q.Received.Before(previousState.cooldown) {
 			continue
 		}
 		direction, change := "", 0.0
@@ -172,4 +205,15 @@ func (e *Engine) Process(q Quote) []Candidate {
 		})
 	}
 	return candidates
+}
+
+func MinimumVolume(rules []Rule) float64 {
+	if len(rules) == 0 {
+		return math.Inf(1)
+	}
+	minimum := rules[0].MinQuoteVolume
+	for _, rule := range rules[1:] {
+		minimum = math.Min(minimum, rule.MinQuoteVolume)
+	}
+	return minimum
 }

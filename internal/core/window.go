@@ -11,7 +11,6 @@ type extremum struct {
 
 type window struct {
 	duration int64
-	started  time.Time
 	minima   []extremum
 	maxima   []extremum
 	minHead  int
@@ -23,9 +22,6 @@ func newWindow(duration time.Duration) *window {
 }
 
 func (w *window) add(at time.Time, value float64) {
-	if w.started.IsZero() {
-		w.started = at
-	}
 	bucket := at.UnixNano() / int64(bucketSize)
 	w.minima, w.minHead = expire(w.minima, w.minHead, bucket-w.duration)
 	w.maxima, w.maxHead = expire(w.maxima, w.maxHead, bucket-w.duration)

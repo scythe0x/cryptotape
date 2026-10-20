@@ -22,6 +22,8 @@ type Terminal struct {
 func NewTerminal() *Terminal {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
+	transport.MaxIdleConnsPerHost = 32
+	transport.MaxConnsPerHost = 32
 	return &Terminal{
 		client:  &http.Client{Transport: transport, Timeout: 1500 * time.Millisecond},
 		baseURL: "http://localhost:5005",

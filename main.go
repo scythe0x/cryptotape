@@ -5,6 +5,7 @@ import (
 	"embed"
 	"log"
 	"log/slog"
+	"sync"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -27,6 +28,9 @@ type DesktopService struct {
 	controller *desktop.Controller
 	app        *application.App
 	overlay    *application.WebviewWindow
+	overlayMu  sync.Mutex
+	visible    bool
+	latestID   int64
 }
 
 func (s *DesktopService) GetSnapshot() (core.Snapshot, error) {
@@ -65,8 +69,12 @@ func (s *DesktopService) SessionAlerts() ([]core.Alert, error) {
 	return s.controller.SessionAlerts()
 }
 
-func (s *DesktopService) OpenTerminal(id int64, symbol string) error {
-	return s.controller.OpenTerminal(id, symbol)
+func (s *DesktopService) OpenTerminal(id int64, symbol string, terminal string) error {
+	return s.controller.OpenTerminal(id, symbol, terminal)
+}
+
+func (s *DesktopService) OpenTerminals(id int64, symbol string, terminals []string) desktop.OpenResult {
+	return s.controller.OpenTerminals(id, symbol, terminals)
 }
 
 func (s *DesktopService) SoundIDs() []string { return s.controller.SoundIDs() }
@@ -75,12 +83,34 @@ func (s *DesktopService) ImportSound(name, extension, encoded string) (string, e
 	return s.controller.ImportSound(name, extension, encoded)
 }
 
-func (s *DesktopService) PreviewSound(id string) error {
-	return s.controller.PreviewSound(id)
+func (s *DesktopService) PreviewSound(id string, volume float64) error {
+	return s.controller.PreviewSound(id, volume)
 }
 
-func (s *DesktopService) HideOverlay() {
+func (s *DesktopService) HideOverlay(afterID int64) {
+	s.overlayMu.Lock()
+	defer s.overlayMu.Unlock()
+	if afterID < s.latestID {
+		return
+	}
 	s.overlay.Hide()
+	s.visible = false
+}
+
+func (s *DesktopService) showOverlay(id int64) {
+	s.overlayMu.Lock()
+	defer s.overlayMu.Unlock()
+	s.latestID = max(s.latestID, id)
+	if !s.visible {
+		s.overlay.Show()
+		if snapshot, err := s.controller.GetSnapshot(); err == nil {
+			s.placeOverlay(snapshot.Settings.MonitorID)
+		} else {
+			slog.Warn("overlay position", "error", err)
+			s.placeOverlay("")
+		}
+		s.visible = true
+	}
 }
 
 func (s *DesktopService) Monitors() []Monitor {
@@ -115,8 +145,8 @@ func main() {
 	}
 	service := &DesktopService{}
 	controller, err := desktop.NewController(path, func(name string, data any) {
-		if name == "alert:new" && service.overlay != nil {
-			service.overlay.Show()
+		if alert, ok := data.(core.Alert); name == "alert:new" && ok && service.overlay != nil {
+			service.showOverlay(alert.ID)
 		}
 		if service.app != nil {
 			service.app.Event.Emit(name, data)
@@ -134,14 +164,10 @@ func main() {
 	})
 	service.app = app
 	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name: "main", Title: "cryptotape", Width: 960, Height: 640,
-		MinWidth: 720, MinHeight: 420, URL: "/",
+		Name: "main", Title: "cryptotape", Width: 440, Height: 740,
+		MinWidth: 420, MinHeight: 420, URL: "/",
 	})
-	service.overlay = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name: "overlay", Title: "cryptotape alerts", Width: 360, Height: 300,
-		URL: "/?overlay=1", Hidden: true, Frameless: true, DisableResize: true,
-		AlwaysOnTop: true, BackgroundType: application.BackgroundTypeTransparent,
-	})
+	service.overlay = app.Window.NewWithOptions(overlayOptions())
 	mainWindow.RegisterHook(events.Common.WindowClosing, func(_ *application.WindowEvent) {
 		app.Quit()
 	})

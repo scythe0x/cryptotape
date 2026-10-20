@@ -22,6 +22,8 @@ type Controller struct {
 	engine   *core.Engine
 	audio    *Audio
 	terminal *Terminal
+	tiger    *Tiger
+	feed     *binance.Feed
 	emit     EventSink
 
 	mu       sync.RWMutex
@@ -64,7 +66,7 @@ func NewController(path string, emit EventSink) (*Controller, error) {
 	}
 	controller := &Controller{
 		store: store, engine: core.NewEngine(rules, settings), audio: audio,
-		terminal: NewTerminal(), emit: emit, rules: rules, settings: settings,
+		terminal: NewTerminal(), tiger: NewTiger(), emit: emit, rules: rules, settings: settings,
 		health: core.Health{State: "starting", Detail: "initializing"},
 	}
 	if len(latest) > 0 {
@@ -103,13 +105,14 @@ func (c *Controller) Close() error {
 	c.mu.Unlock()
 	c.feedWG.Wait()
 	c.actionWG.Wait()
-	return c.store.Close()
+	c.tiger.Close()
+	return errors.Join(c.audio.Close(), c.store.Close())
 }
 
 func (c *Controller) GetSnapshot() (core.Snapshot, error) {
 	c.mu.RLock()
 	snapshot := core.Snapshot{
-		Rules: append([]core.Rule(nil), c.rules...), Settings: c.settings, Health: c.health,
+		Rules: append([]core.Rule{}, c.rules...), Settings: c.settings, Health: c.health,
 	}
 	c.mu.RUnlock()
 	alerts, err := c.store.ListAlerts(context.Background(), 0, 100)
@@ -143,9 +146,13 @@ func (c *Controller) reloadRules() error {
 	c.mu.Lock()
 	c.rules = rules
 	settings := c.settings
+	feed := c.feed
 	c.mu.Unlock()
 	c.engine.Configure(rules, settings)
 	c.emit("rules:changed", rules)
+	if feed != nil {
+		feed.SetMinimumVolume(core.MinimumVolume(rules))
+	}
 	return nil
 }
 
@@ -155,13 +162,12 @@ func (c *Controller) SaveSettings(settings core.Settings) error {
 	}
 	c.mu.Lock()
 	oldProxy := c.settings.Proxy
-	oldVolume := c.settings.MinQuoteVolume
 	c.settings = settings
 	rules := append([]core.Rule(nil), c.rules...)
 	c.mu.Unlock()
 	c.engine.Configure(rules, settings)
 	c.emit("settings:changed", settings)
-	if oldProxy != settings.Proxy || oldVolume != settings.MinQuoteVolume {
+	if oldProxy != settings.Proxy {
 		c.engine.ResetAll()
 		c.restartFeed()
 	}
@@ -188,7 +194,7 @@ func (c *Controller) ImportSound(name, extension, encoded string) (string, error
 	return id, err
 }
 
-func (c *Controller) PreviewSound(id string) error { return c.audio.Play(id) }
+func (c *Controller) PreviewSound(id string, volume float64) error { return c.audio.Play(id, volume) }
 
 func (c *Controller) ListAlerts(before int64, limit int) ([]core.Alert, error) {
 	return c.store.ListAlerts(context.Background(), before, limit)
@@ -213,23 +219,6 @@ func (c *Controller) SessionAlerts() ([]core.Alert, error) {
 	return result, nil
 }
 
-func (c *Controller) OpenTerminal(id int64, symbol string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	err := c.terminal.Open(ctx, symbol)
-	if id > 0 {
-		status, detail := "manual-ok", ""
-		if err != nil {
-			status, detail = "manual-error", err.Error()
-		}
-		if saveErr := c.store.UpdateTerminal(id, status, detail); saveErr != nil {
-			slog.Error("save terminal status", "error", saveErr)
-		}
-		c.emit("alert:update", map[string]any{"id": id, "terminalStatus": status, "terminalError": detail})
-	}
-	return err
-}
-
 func (c *Controller) restartFeed() {
 	c.mu.Lock()
 	if c.root == nil {
@@ -242,7 +231,7 @@ func (c *Controller) restartFeed() {
 	ctx, cancel := context.WithCancel(c.root)
 	c.cancel = cancel
 	proxy := c.settings.Proxy
-	minVolume := c.settings.MinQuoteVolume
+	minVolume := core.MinimumVolume(c.rules)
 	version := c.version.Add(1)
 	c.feedWG.Add(1)
 	c.mu.Unlock()
@@ -276,6 +265,15 @@ func (c *Controller) feedLoop(ctx context.Context, proxy string, minVolume float
 					c.engine.Reset(symbols)
 				}
 			},
+			Ping: func(elapsed time.Duration) {
+				if c.version.Load() != version {
+					return
+				}
+				ms := elapsed.Milliseconds()
+				c.mu.Lock()
+				c.health.PingMs = &ms
+				c.mu.Unlock()
+			},
 			Health: func(health core.Health) {
 				if c.version.Load() == version {
 					c.setHealth(health)
@@ -283,6 +281,12 @@ func (c *Controller) feedLoop(ctx context.Context, proxy string, minVolume float
 			},
 		})
 		if err == nil {
+			c.mu.Lock()
+			if c.version.Load() == version {
+				c.feed = feed
+				feed.SetMinimumVolume(core.MinimumVolume(c.rules))
+			}
+			c.mu.Unlock()
 			err = feed.Run(ctx)
 		}
 		if ctx.Err() != nil {
@@ -311,11 +315,11 @@ func (c *Controller) onQuote(quote core.Quote) {
 		c.actionWG.Add(1)
 		go func() {
 			defer c.actionWG.Done()
-			if err := c.audio.Play(alert.Sound); err != nil {
+			if err := c.audio.PlayAlert(alert.ID, alert.Sound, alert.Volume); err != nil {
 				slog.Error("play alert", "error", err)
 			}
 		}()
-		if alert.OpenTerminal {
+		if len(alert.Terminals) > 0 {
 			c.actionWG.Add(1)
 			go func() {
 				defer c.actionWG.Done()
@@ -325,29 +329,18 @@ func (c *Controller) onQuote(quote core.Quote) {
 	}
 }
 
-func (c *Controller) openAutomatically(alert core.Alert) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	err := c.terminal.Open(ctx, alert.Symbol)
-	status, detail := "ok", ""
-	if err != nil {
-		status, detail = "error", err.Error()
-	}
-	if saveErr := c.store.UpdateTerminal(alert.ID, status, detail); saveErr != nil {
-		slog.Error("save terminal status", "error", saveErr)
-	}
-	c.emit("alert:update", map[string]any{"id": alert.ID, "terminalStatus": status, "terminalError": detail})
-}
-
 func (c *Controller) setHealth(health core.Health) {
 	if health.State == "warming" {
 		health.Ready = c.engine.ReadyCount(time.Now())
-		if health.Ready > 0 {
-			health.State = "connected"
-			health.Detail = "signals live"
-		}
+		health.State = "connected"
+		health.Detail = "signals live"
 	}
 	c.mu.Lock()
+	if health.State == "warming" || health.State == "connected" {
+		health.PingMs = c.health.PingMs
+	} else {
+		health.PingMs = nil
+	}
 	c.health = health
 	c.mu.Unlock()
 	c.emit("health", health)

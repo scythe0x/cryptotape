@@ -3,24 +3,28 @@ package core
 import "time"
 
 type Rule struct {
-	ID            int64   `json:"id"`
-	Name          string  `json:"name"`
-	Percent       float64 `json:"percent"`
-	WindowSeconds int     `json:"windowSeconds"`
-	Sound         string  `json:"sound"`
-	OpenTerminal  bool    `json:"openTerminal"`
-	Enabled       bool    `json:"enabled"`
+	ID             int64    `json:"id"`
+	Name           string   `json:"name"`
+	Percent        float64  `json:"percent"`
+	WindowSeconds  int      `json:"windowSeconds"`
+	Sound          string   `json:"sound"`
+	Color          string   `json:"color"`
+	Volume         float64  `json:"volume"`
+	MinQuoteVolume float64  `json:"minQuoteVolume"`
+	Terminals      []string `json:"terminals"`
 }
 
 type Settings struct {
-	Proxy           string  `json:"proxy"`
-	MinQuoteVolume  float64 `json:"minQuoteVolume"`
-	CooldownSeconds int     `json:"cooldownSeconds"`
-	MonitorID       string  `json:"monitorId"`
+	Language        string `json:"language"`
+	Proxy           string `json:"proxy"`
+	CooldownSeconds int    `json:"cooldownSeconds"`
+	MonitorID       string `json:"monitorId"`
+	TigerPort       int    `json:"tigerPort"`
+	TigerLinkGroup  string `json:"tigerLinkGroup"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{MinQuoteVolume: 80_000_000, CooldownSeconds: 60}
+	return Settings{Language: "ru", CooldownSeconds: 60, TigerPort: 7819, TigerLinkGroup: "A"}
 }
 
 type Quote struct {
@@ -44,24 +48,27 @@ type Candidate struct {
 }
 
 type Alert struct {
-	ID             int64   `json:"id"`
-	RuleID         int64   `json:"ruleId"`
-	RuleName       string  `json:"ruleName"`
-	Symbol         string  `json:"symbol"`
-	Direction      string  `json:"direction"`
-	ChangePercent  float64 `json:"changePercent"`
-	Price          float64 `json:"price"`
-	SpreadPercent  float64 `json:"spreadPercent"`
-	QuoteVolume    float64 `json:"quoteVolume"`
-	EventTimeMs    int64   `json:"eventTimeMs"`
-	CreatedAtMs    int64   `json:"createdAtMs"`
-	Sound          string  `json:"sound"`
-	OpenTerminal   bool    `json:"openTerminal"`
-	TerminalStatus string  `json:"terminalStatus"`
-	TerminalError  string  `json:"terminalError"`
+	ID             int64    `json:"id"`
+	RuleID         int64    `json:"ruleId"`
+	RuleName       string   `json:"ruleName"`
+	Symbol         string   `json:"symbol"`
+	Direction      string   `json:"direction"`
+	ChangePercent  float64  `json:"changePercent"`
+	Price          float64  `json:"price"`
+	SpreadPercent  float64  `json:"spreadPercent"`
+	QuoteVolume    float64  `json:"quoteVolume"`
+	EventTimeMs    int64    `json:"eventTimeMs"`
+	CreatedAtMs    int64    `json:"createdAtMs"`
+	Sound          string   `json:"sound"`
+	Color          string   `json:"color"`
+	Volume         float64  `json:"volume"`
+	Terminals      []string `json:"terminals"`
+	TerminalStatus string   `json:"terminalStatus"`
+	TerminalError  string   `json:"terminalError"`
 }
 
 type Health struct {
+	PingMs      *int64 `json:"pingMs"`
 	State       string `json:"state"`
 	Detail      string `json:"detail"`
 	Connections int    `json:"connections"`

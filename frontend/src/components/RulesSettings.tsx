@@ -1,71 +1,76 @@
 import { useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import type { Rule } from '../api'
-import { desktop } from '../api'
 import { RuleDialog } from './RuleDialog'
+import { AlertBadge } from './AlertBadge'
+import { useTranslation, soundLabel } from '../i18n'
 import { Button } from './ui'
 
-type Props = {
-  rules: Rule[]
-  sounds: string[]
-  onSaved: () => void
-}
-
-function duration(seconds: number): string {
-  return seconds < 60 ? `${seconds}s` : `${seconds / 60}m`
-}
+type Props = { rules: Rule[]; sounds: string[]; onSaved: () => void }
 
 export function RulesSettings({ rules, sounds, onSaved }: Props) {
+  const { t, i18n } = useTranslation()
   const [editing, setEditing] = useState(false)
   const [selected, setSelected] = useState<Rule | null>(null)
-  const [pending, setPending] = useState<number | null>(null)
-  const [error, setError] = useState('')
-
-  async function toggle(rule: Rule) {
-    setPending(rule.id)
-    setError('')
-    try {
-      await desktop.saveRule({ ...rule, enabled: !rule.enabled })
-      onSaved()
-    } catch (cause) {
-      setError(String(cause))
-    } finally {
-      setPending(null)
-    }
-  }
-
-  async function remove(rule: Rule) {
-    if (!window.confirm(`delete ${rule.name}?`)) return
-    setError('')
-    try {
-      await desktop.deleteRule(rule.id)
-      onSaved()
-    } catch (cause) {
-      setError(String(cause))
-    }
-  }
-
-  return <>
-    <div className="rules-toolbar">
-      <Button onClick={() => { setSelected(null); setEditing(true) }}><Plus size={13} />new alert</Button>
-    </div>
-    <div className="rule-list">
-      {rules.length === 0 && <div className="rules-empty">no alerts configured</div>}
-      {rules.map((rule) => <article className={`rule-card ${rule.enabled ? '' : 'rule-disabled'}`} key={rule.id}>
-        <div className="rule-card-top">
-          <button className="rule-title" onClick={() => { setSelected(rule); setEditing(true) }}>{rule.name}</button>
-          <label className="switch" title={rule.enabled ? 'disable alert' : 'enable alert'}>
-            <input type="checkbox" aria-label={`enable ${rule.name}`} checked={rule.enabled} disabled={pending !== null}
-              onChange={() => void toggle(rule)} /><span />
-          </label>
-        </div>
-        <div className="rule-meta"><strong>±{rule.percent}% / {duration(rule.windowSeconds)}</strong>
-          <span>{rule.sound.startsWith('custom:') ? 'custom' : rule.sound}{rule.openTerminal ? ' · auto' : ''}</span>
-          <button aria-label={`delete ${rule.name}`} title="delete alert" onClick={() => void remove(rule)}><Trash2 size={12} /></button>
-        </div>
-      </article>)}
-    </div>
-    {error && <div className="inline-error">{error}</div>}
-    {editing && <RuleDialog open={editing} onOpenChange={setEditing} rule={selected} sounds={sounds} onSaved={onSaved} />}
-  </>
+  return (
+    <>
+      <div className="rule-list">
+        {rules.length === 0 && <div className="rules-empty">{t('noAlerts')}</div>}
+        {rules.map((rule) => (
+          <button
+            type="button"
+            className="rule-card"
+            key={rule.id}
+            onClick={() => {
+              setSelected(rule)
+              setEditing(true)
+            }}
+          >
+            <AlertBadge name={rule.name} color={rule.color} />
+            <span className="rule-meta">
+              <strong>
+                ±{rule.percent}% /{' '}
+                {rule.windowSeconds < 60
+                  ? `${rule.windowSeconds}${t('secondsShort')}`
+                  : `${rule.windowSeconds / 60}${t('minutesShort')}`}
+              </strong>
+              <span>
+                $
+                {new Intl.NumberFormat(i18n.language, {
+                  notation: 'compact',
+                }).format(rule.minQuoteVolume)}{' '}
+                / {t('hours24')}
+              </span>
+              <span>
+                {rule.sound.startsWith('custom:') ? t('customSound') : soundLabel(rule.sound)}
+                {rule.sound !== 'none' && ` · ${Math.round(rule.volume * 100)}%`}
+              </span>
+            </span>
+            {rule.terminals.length > 0 && (
+              <span className="rule-terminals">
+                {rule.terminals.map((id) => (id === 'vataga' ? 'Vataga' : 'Tiger')).join(' · ')} · {t('auto')}
+              </span>
+            )}
+          </button>
+        ))}
+        <Button
+          className="new-rule"
+          onClick={() => {
+            setSelected(null)
+            setEditing(true)
+          }}
+        >
+          <Plus size={13} />
+          {t('newAlert')}
+        </Button>
+      </div>
+      <RuleDialog
+        open={editing}
+        onOpenChange={setEditing}
+        rule={selected}
+        sounds={sounds}
+        onSaved={onSaved}
+      />
+    </>
+  )
 }

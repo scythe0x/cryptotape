@@ -1,6 +1,15 @@
 version: '3'
 
 tasks:
+  run:mac:
+    cmds:
+      - go run -tags private_mac_apis .
+
+  build:mac:
+    deps: [frontend]
+    cmds:
+      - go build -tags production,private_mac_apis -trimpath -o build/bin/cryptotape .
+
   frontend:
     dir: frontend
     cmds:
@@ -28,4 +37,4 @@ tasks:
     cmds:
       - go test ./internal/... .
       - go vet ./internal/... .
-      - cd frontend && npm run lint && npm run build
+      - cd frontend && npm run lint && npm test && npm run build

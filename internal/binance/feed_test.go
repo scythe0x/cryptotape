@@ -3,11 +3,13 @@ package binance
 import (
 	"context"
 	"encoding/json"
+	"github.com/coder/websocket"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestBookTickerKeepsPricesSeparateFromQuantities(t *testing.T) {
@@ -59,5 +61,62 @@ func TestEligibilityChangesUseCurrentTurnover(t *testing.T) {
 	case <-feed.updates[0]:
 	default:
 		t.Fatal("book stream was not told about changed eligibility")
+	}
+}
+
+func TestPingReportsRoundTripAndStopsOnCancellation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connection, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		connection.Read(r.Context())
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	connection, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.CloseNow()
+	go connection.Read(ctx)
+	reports := make(chan time.Duration, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		pingUntilDone(ctx, connection, func(elapsed time.Duration) { reports <- elapsed })
+	}()
+	select {
+	case elapsed := <-reports:
+		if elapsed <= 0 {
+			t.Fatalf("invalid RTT: %s", elapsed)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no initial ping measurement")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("ping loop did not stop")
+	}
+}
+
+func TestListingRefreshPreservesExistingShardsAndAddsNewMarket(t *testing.T) {
+	feed := &Feed{minVolume: 80e6, known: map[string]bool{"AAAUSDT": true, "BBBUSDT": true}, volumes: map[string]float64{"AAAUSDT": 90e6, "BBBUSDT": 90e6}, eligible: map[string]bool{"AAAUSDT": true, "BBBUSDT": true}, shardMembers: [][]string{{"AAAUSDT"}, {"BBBUSDT"}}, updates: []chan struct{}{make(chan struct{}, 1), make(chan struct{}, 1)}, cb: Callbacks{Gap: func([]string) {}}}
+	feed.refreshSymbols([]string{"AAAUSDT", "BBBUSDT", "NEWUSDT"})
+	feed.updateEligibility(map[string]float64{"NEWUSDT": 100e6})
+	if feed.symbolShard["AAAUSDT"] != 0 || feed.symbolShard["BBBUSDT"] != 1 || !feed.eligible["NEWUSDT"] {
+		t.Fatal("listing reset existing shards or was missed")
+	}
+	feed.SetMinimumVolume(120e6)
+	if len(feed.desiredStreams(0))+len(feed.desiredStreams(1)) != 0 {
+		t.Fatal("subscription floor not applied")
+	}
+	feed.SetMinimumVolume(85e6)
+	if len(feed.desiredStreams(0))+len(feed.desiredStreams(1)) != 3 {
+		t.Fatal("eligible markets not subscribed")
 	}
 }

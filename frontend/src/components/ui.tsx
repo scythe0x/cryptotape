@@ -1,8 +1,8 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes } from 'react'
+import type { ButtonHTMLAttributes, ComponentProps } from 'react'
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
-export function cn(...values: Parameters<typeof clsx>): string {
+function cn(...values: Parameters<typeof clsx>): string {
   return twMerge(clsx(...values))
 }
 
@@ -15,6 +15,6 @@ export function Button({ variant = 'secondary', size = 'default', className, ...
   return <button className={cn('button', `button-${variant}`, size === 'icon' && 'button-icon', className)} {...props} />
 }
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+export function Input(props: ComponentProps<'input'>) {
   return <input {...props} className={cn('input', props.className)} />
 }

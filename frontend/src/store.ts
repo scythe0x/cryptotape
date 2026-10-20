@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Alert, AlertUpdate, Health, Rule, Settings, Snapshot } from './api'
+import { mergeAlerts } from './alerts'
 
 type AppState = {
   rules: Rule[]
@@ -11,8 +12,7 @@ type AppState = {
   setRules: (rules: Rule[]) => void
   setSettings: (settings: Settings) => void
   setHealth: (health: Health) => void
-  addAlerts: (alerts: Alert[]) => void
-  updateAlert: (update: AlertUpdate) => void
+  addAlerts: (alerts: Alert[], updates?: AlertUpdate[]) => void
   setError: (error: string) => void
 }
 
@@ -26,19 +26,11 @@ export const useAppStore = create<AppState>((set) => ({
     rules: snapshot.rules,
     settings: snapshot.settings,
     health: snapshot.health,
-    alerts: [...new Map([...snapshot.alerts, ...state.alerts].map((alert) => [alert.id, alert])).values()]
-      .sort((a, b) => b.id - a.id),
+    alerts: mergeAlerts(state.alerts, snapshot.alerts),
   })),
   setRules: (rules) => set({ rules }),
   setSettings: (settings) => set({ settings }),
   setHealth: (health) => set({ health }),
-  addAlerts: (incoming) => set((state) => {
-    const byId = new Map(state.alerts.map((alert) => [alert.id, alert]))
-    for (const alert of incoming) byId.set(alert.id, alert)
-    return { alerts: [...byId.values()].sort((a, b) => b.id - a.id) }
-  }),
-  updateAlert: (update) => set((state) => ({
-    alerts: state.alerts.map((alert) => alert.id === update.id ? { ...alert, ...update } : alert),
-  })),
+  addAlerts: (incoming, updates = []) => set((state) => ({ alerts: mergeAlerts(state.alerts, incoming, updates) })),
   setError: (error) => set({ error }),
 }))
