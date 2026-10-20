@@ -3,7 +3,7 @@ Unicode true
 !define INFO_PROJECTNAME "cryptotape"
 !define INFO_COMPANYNAME "cryptotape"
 !define INFO_PRODUCTNAME "cryptotape"
-!define INFO_PRODUCTVERSION "0.1.0"
+!define INFO_PRODUCTVERSION "0.1.1"
 !define INFO_COPYRIGHT "cryptotape"
 !define WAILS_INSTALL_SCOPE "user"
 
@@ -88,16 +88,44 @@ OutFile "..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe" # Name of the inst
 ShowInstDetails show # This will always show the installation details.
 
 Function .onInit
-   !insertmacro wails.checkArchitecture
+    !insertmacro wails.checkArchitecture
+    SetRegView 64
+    ReadRegStr $0 HKCU "${UNINST_KEY}" "InstallLocation"
+    ${If} $0 != ""
+        StrCpy $INSTDIR $0
+    ${Else}
+        ReadRegStr $0 HKCU "${UNINST_KEY}" "DisplayIcon"
+        ${If} $0 != ""
+            ${GetParent} "$0" $INSTDIR
+        ${EndIf}
+    ${EndIf}
+FunctionEnd
+
+Function ensureAppClosed
+    IfFileExists "$INSTDIR\${PRODUCT_EXECUTABLE}" 0 done
+    retry:
+        System::Call 'kernel32::CreateFileW(w "$INSTDIR\${PRODUCT_EXECUTABLE}", i 0x40000000, i 3, p 0, i 3, i 0x80, p 0) p .r0'
+        IntCmp $0 -1 locked
+        System::Call 'kernel32::CloseHandle(p r0)'
+        Goto done
+    locked:
+        IfSilent abortUpdate
+        MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Не удаётся заменить cryptotape.exe. Закройте cryptotape и проверьте доступ к папке установки." IDRETRY retry
+    abortUpdate:
+        SetErrorLevel 2
+        Abort
+    done:
 FunctionEnd
 
 Section
     !insertmacro wails.setShellContext
 
+    Call ensureAppClosed
     !insertmacro wails.webview2runtime
 
     SetOutPath $INSTDIR
     
+    SetOverwrite on
     !insertmacro wails.files
 
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
@@ -106,6 +134,7 @@ Section
     !insertmacro wails.associateFiles
 
     !insertmacro wails.writeUninstaller
+    WriteRegStr HKCU "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
 SectionEnd
 
 Section "uninstall" 
