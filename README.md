@@ -4,7 +4,7 @@ windows 11 screener for first-crossing Binance USDⓈ-M futures alerts. the Go m
 
 ## run and build
 
-requires Go 1.26.1, Node.js 22+, [Wails 3 CLI](https://v3.wails.io/getting-started/installation/) and, for the installer, NSIS. Windows also needs WebView2; the installer includes its bootstrapper.
+requires Go 1.26.1, Node.js 22+, and [Wails 3 CLI](https://v3.wails.io/getting-started/installation/). Windows also needs the WebView2 runtime.
 
 ```sh
 cd frontend
@@ -18,16 +18,16 @@ on macos use `wails3 task run:mac` or `wails3 task build:mac`. transparent notif
 
 ```sh
 wails3 task check
-wails3 task installer:windows
+wails3 task build:windows
 ```
 
-the second command writes `build/bin/cryptotape.exe` and `build/bin/cryptotape-amd64-installer.exe`. cross-compiling on macOS produces Windows files but does not verify their behavior on Windows.
+the second command writes `build/bin/cryptotape.exe`. all frontend assets and built-in sounds are embedded; no files need to sit beside the executable. windows requires WebView2 runtime. cross-compiling on macos does not verify native windows behavior.
 
-## releases and upgrades
+## releases and updates
 
-pushing a version tag such as `v0.1.0` runs `.github/workflows/release.yml`: frontend/backend checks, a windows installer build, installation/upgrade checks and publication of the installer, standalone exe and sha256 checksums. the tag must match the versions in `frontend/package.json`, `build/windows/info.json` and `build/windows/nsis/project.nsi`.
+pushing a version tag such as `v0.1.3` runs `.github/workflows/release.yml`: frontend/backend checks, a windows build and publication of `cryptotape.exe`. the tag must match the versions in `frontend/package.json` and `build/windows/info.json`.
 
-run the newer installer after closing cryptotape. it reuses the registered installation directory, replaces the executable and updates the existing uninstall entry. settings, history and imported sounds live separately in `%APPDATA%\cryptotape` and survive upgrades. if the executable is locked, interactive installation offers retry/cancel; silent installation exits with code 2. this is manual updating by installer, not an in-app automatic updater.
+download the exe and run it. to update, close cryptotape and replace the old exe. settings, history and imported sounds live separately in `%APPDATA%\cryptotape` and survive replacement or relocation of the executable for the same windows user. there is no installer or in-app automatic updater.
 
 ## signals
 
@@ -66,7 +66,7 @@ native overlay placement/focus over fullscreen apps, actual audio output, real t
 
 the integration test contacts the live Binance futures API. latency and resource targets need profiling under full market load on the intended Windows 11 machine. Tiger uses a persistent local websocket at port 7819 by default and `SETLINKSYMBOL` with `BINANCE-FUT` / `FUTURES`. enable the local signal server in Tiger and link the target windows to the configured group (A by default); opening symbols does not require enabling trading. protocol: [Tiger API](https://support.tiger.com/razrabotka-dlya-tiger.trade-windows/tiger-api). terminal icons come from [Vataga](https://vataga.trading/_next/static/media/logo-white.1d49bd01.svg) and [Tiger](https://tiger.com/images/favicon.ico).
 
-the five built-in sounds include the original `notification.mp3` for personal use; confirm distribution rights before publishing an installer.
+the five built-in sounds include the original `notification.mp3` for personal use; confirm distribution rights before public distribution.
 
 the automated crash replay warms 750 markets, then feeds 82,500 volatile quotes with drops from 10% to 60% and sharp rebounds. it verifies 1,500 first-crossing alerts, no rebound spam, and complete SQLite cursor recovery. a separate local HTTP test verifies all 750 terminal commands. frontend tests cover 1/5/15/1,500 notifications, burst batching, and terminal-status recovery. these are component checks, not a Windows end-to-end latency measurement.
 

@@ -31,10 +31,8 @@ jobs:
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'expected vMAJOR.MINOR.PATCH tag' }
           $package = Get-Content frontend/package.json -Raw | ConvertFrom-Json
           $info = Get-Content build/windows/info.json -Raw | ConvertFrom-Json
-          $installer = Get-Content build/windows/nsis/project.nsi -Raw
           if ($package.version -ne $version -or $info.fixed.file_version -ne $version -or
-              $info.info.'0000'.ProductVersion -ne $version -or
-              $installer -notmatch ('!define INFO_PRODUCTVERSION "' + [regex]::Escape($version) + '"')) {
+              $info.info.'0000'.ProductVersion -ne $version) {
             throw 'tag and application versions must match'
           }
       - run: npm ci
@@ -47,54 +45,12 @@ jobs:
         working-directory: frontend
       - run: go test -count=1 ./internal/... .
       - run: go vet ./internal/... .
-      - name: install packaging tools
-        shell: pwsh
-        run: |
-          choco install nsis --no-progress -y
-          'C:\Program Files (x86)\NSIS' | Out-File $env:GITHUB_PATH -Append
-          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.33
-      - run: wails3 task installer:windows
-      - name: verify install and upgrade
-        shell: pwsh
-        run: |
-          $installer = (Resolve-Path build/bin/cryptotape-amd64-installer.exe).Path
-          $target = Join-Path $env:RUNNER_TEMP 'cryptotape-upgrade-test'
-          $process = Start-Process $installer -ArgumentList "/S /D=$target" -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "installation failed: $($process.ExitCode)" }
-          $exe = Join-Path $target 'cryptotape.exe'
-          $expected = (Get-FileHash build/bin/cryptotape.exe).Hash
-          if ((Get-FileHash $exe).Hash -ne $expected) { throw 'installed binary differs from build' }
-
-          $data = Join-Path $env:APPDATA 'cryptotape'
-          New-Item $data -ItemType Directory -Force | Out-Null
-          $marker = Join-Path $data 'upgrade-test.keep'
-          'preserve user data' | Set-Content $marker
-
-          $lock = [System.IO.File]::Open($exe, 'Open', 'Read', 'Read')
-          try {
-            $process = Start-Process $installer -ArgumentList '/S' -Wait -PassThru
-            if ($process.ExitCode -ne 2) { throw 'locked executable was not handled safely' }
-          } finally {
-            $lock.Dispose()
-          }
-
-          'old binary fixture' | Set-Content $exe
-          $process = Start-Process $installer -ArgumentList '/S' -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "upgrade failed: $($process.ExitCode)" }
-          if ((Get-FileHash $exe).Hash -ne $expected) { throw 'upgrade did not replace the existing executable' }
-          if ((Get-Content $marker -Raw).Trim() -ne 'preserve user data') { throw 'upgrade removed user data' }
-      - name: checksums
-        shell: pwsh
-        run: |
-          $assets = @('cryptotape-amd64-installer.exe', 'cryptotape.exe')
-          $lines = foreach ($asset in $assets) {
-            $hash = (Get-FileHash "build/bin/$asset" -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $asset"
-          }
-          $lines | Set-Content build/bin/SHA256SUMS.txt -Encoding utf8
+      - name: install build tools
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.33
+      - run: wails3 task build:windows
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release create $env:GITHUB_REF_NAME build/bin/cryptotape-amd64-installer.exe build/bin/cryptotape.exe build/bin/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --verify-tag --title "cryptotape $env:GITHUB_REF_NAME" --generate-notes
+          gh release create $env:GITHUB_REF_NAME build/bin/cryptotape.exe --repo $env:GITHUB_REPOSITORY --verify-tag --title "cryptotape $env:GITHUB_REF_NAME" --generate-notes

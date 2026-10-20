@@ -26,13 +26,6 @@ tasks:
       - wails3 generate syso -arch amd64 -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out wails_windows_amd64.syso
       - go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" -o build/bin/cryptotape.exe .
 
-  installer:windows:
-    deps: [build:windows]
-    dir: build/windows/nsis
-    cmds:
-      - wails3 generate webview2bootstrapper -dir .
-      - makensis -INPUTCHARSET UTF8 '-DARG_WAILS_AMD64_BINARY=..\..\bin\cryptotape.exe' project.nsi
-
   check:
     cmds:
       - go test ./internal/... .
