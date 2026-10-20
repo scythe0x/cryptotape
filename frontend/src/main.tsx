@@ -1,15 +1,12 @@
-import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import { App } from './App'
+import { Overlay } from './Overlay'
+import './style.css'
 
-import "./index.css";
-import { ThemeProvider } from "@/components/theme-provider.tsx";
-import App from "./App.tsx";
+const overlay = new URLSearchParams(window.location.search).has('overlay')
+document.documentElement.classList.toggle('overlay-page', overlay)
 
-// biome-ignore lint/style/noNonNullAssertion: <explanation>
-createRoot(document.getElementById("root")!).render(
-	<StrictMode>
-		<ThemeProvider>
-			<App />
-		</ThemeProvider>
-	</StrictMode>,
-);
+createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>{overlay ? <Overlay /> : <App />}</React.StrictMode>,
+)

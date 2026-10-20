@@ -1,0 +1,31 @@
+version: '3'
+
+tasks:
+  frontend:
+    dir: frontend
+    cmds:
+      - npm ci
+      - npm run build
+
+  build:windows:
+    deps: [frontend]
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      CGO_ENABLED: '0'
+    cmds:
+      - wails3 generate syso -arch amd64 -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out wails_windows_amd64.syso
+      - go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" -o build/bin/cryptotape.exe .
+
+  installer:windows:
+    deps: [build:windows]
+    dir: build/windows/nsis
+    cmds:
+      - wails3 generate webview2bootstrapper -dir .
+      - makensis -DARG_WAILS_AMD64_BINARY="{{.ROOT_DIR}}/build/bin/cryptotape.exe" project.nsi
+
+  check:
+    cmds:
+      - go test ./internal/... .
+      - go vet ./internal/... .
+      - cd frontend && npm run lint && npm run build
