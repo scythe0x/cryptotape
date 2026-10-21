@@ -1,0 +1,28 @@
+.scroll-area { position: relative; min-height: 0; overflow: hidden; }
+.scroll-viewport { width: 100%; height: 100%; border-radius: inherit; outline: none; }
+.scroll-bar { display: flex; width: 7px; padding: 2px; user-select: none; touch-action: none; }
+.scroll-bar[data-orientation='horizontal'] { height: 7px; flex-direction: column; }
+.scroll-thumb { position: relative; flex: 1; border-radius: 8px; background: #686868a0; }
+.scroll-thumb:hover { background: #929292; }
+.select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; }
+.select-trigger > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select-trigger:disabled { opacity: .5; }
+.select-content { z-index: 60; min-width: var(--radix-select-trigger-width); max-width: calc(100vw - 32px); max-height: var(--radix-select-content-available-height); background: var(--panel); color: #e8e8e8; border: 1px solid #414141; border-radius: 6px; box-shadow: 0 8px 24px #0006; overflow: hidden; }
+.select-viewport { padding: 4px; max-height: min(320px, var(--radix-select-content-available-height)); }
+.select-item { display: flex; justify-content: space-between; align-items: center; gap: 16px; outline: none; border-radius: 3px; padding: 7px 9px; font-size: 12px; cursor: default; }
+.select-item[data-highlighted] { background: #414141; }
+.dialog-content.scroll-dialog { display: flex; flex-direction: column; max-height: calc(100dvh - 32px); overflow: hidden; padding-bottom: 16px; }
+.scroll-dialog > .dialog-heading { flex-shrink: 0; }
+.dialog-body-scroll { flex: 0 1 auto; min-height: 0; margin-right: -10px; padding-right: 10px; }
+.dialog-body-scroll > .scroll-viewport { max-height: calc(100dvh - 120px); }
+.settings-dialog.scroll-dialog > [data-orientation='horizontal'] { display: flex; flex-direction: column; min-height: 0; }
+.settings-body-scroll { flex: 0 1 auto; min-height: 0; margin-right: -10px; padding-right: 10px; }
+.settings-body-scroll > .scroll-viewport { max-height: calc(100dvh - 174px); }
+.settings-dialog .settings-tabs { flex-shrink: 0; }
+.settings-dialog .rule-list { max-height: none; overflow: visible; }
+.rule-meta-row { display: flex; align-items: center; gap: 9px; margin-top: 9px; }
+.rule-meta-row .rule-meta { margin-top: 0; }
+.rule-meta-row .rule-terminals { display: flex; gap: 6px; flex-shrink: 0; margin-top: 0; }
+.rule-terminal-icon { width: 16px; height: 16px; }
+.listing-key-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.listing-key-saved { display: inline-flex; align-items: center; gap: 4px; color: #66c989; font-size: 11px; }

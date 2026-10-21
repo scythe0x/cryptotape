@@ -22,18 +22,19 @@ type Rule struct {
 }
 
 type Settings struct {
-	SoundMuted     bool           `json:"soundMuted"`
-	BannersEnabled bool           `json:"bannersEnabled"`
-	Language       string         `json:"language"`
-	Proxies        []ProxyProfile `json:"proxies"`
-	ActiveProxyID  string         `json:"activeProxyId"`
-	MonitorID      string         `json:"monitorId"`
-	TigerPort      int            `json:"tigerPort"`
-	TigerLinkGroup string         `json:"tigerLinkGroup"`
+	TableColumns   []TableColumnID `json:"tableColumns"`
+	SoundMuted     bool            `json:"soundMuted"`
+	BannersEnabled bool            `json:"bannersEnabled"`
+	Language       string          `json:"language"`
+	Proxies        []ProxyProfile  `json:"proxies"`
+	ActiveProxyID  string          `json:"activeProxyId"`
+	MonitorID      string          `json:"monitorId"`
+	TigerPort      int             `json:"tigerPort"`
+	TigerLinkGroup string          `json:"tigerLinkGroup"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{BannersEnabled: true, Proxies: []ProxyProfile{}, Language: "ru", TigerPort: 7819, TigerLinkGroup: "A"}
+	return Settings{TableColumns: DefaultTableColumns(), BannersEnabled: true, Proxies: []ProxyProfile{}, Language: "ru", TigerPort: 7819, TigerLinkGroup: "A"}
 }
 
 type Quote struct {

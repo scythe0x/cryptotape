@@ -3,6 +3,9 @@ package storage
 import (
 	"encoding/json"
 	"path/filepath"
+	"reflect"
+
+	"cryptotape/internal/core"
 	"testing"
 )
 
@@ -21,6 +24,9 @@ func TestLanguageDefaultsForExistingSettingsAndPersists(t *testing.T) {
 	}
 	if settings.SoundMuted || !settings.BannersEnabled {
 		t.Fatal("legacy settings did not default to enabled sounds and banners")
+	}
+	if !reflect.DeepEqual(settings.TableColumns, core.DefaultTableColumns()) {
+		t.Fatalf("legacy table columns: %v", settings.TableColumns)
 	}
 	if settings.Language != "ru" {
 		t.Fatalf("legacy settings language: %q", settings.Language)
@@ -50,5 +56,36 @@ func TestLanguageDefaultsForExistingSettingsAndPersists(t *testing.T) {
 	settings.Language = "de"
 	if err = store.SaveSettings(settings); err == nil {
 		t.Fatal("unsupported language accepted")
+	}
+}
+
+func TestTableColumnsDefaultValidateAndPersist(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "columns.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings, err := store.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(settings.TableColumns, core.DefaultTableColumns()) {
+		t.Fatalf("column defaults: %v", settings.TableColumns)
+	}
+	for _, columns := range [][]core.TableColumnID{{core.ColumnEvent, core.ColumnTime}, {}} {
+		settings.TableColumns = columns
+		if err := store.SaveSettings(settings); err != nil {
+			t.Fatal(err)
+		}
+		saved, err := store.Settings()
+		if err != nil || !reflect.DeepEqual(saved.TableColumns, columns) {
+			t.Fatalf("column order: %v %v", saved.TableColumns, err)
+		}
+	}
+	for _, columns := range [][]core.TableColumnID{{core.ColumnTime, core.ColumnTime}, {"unknown"}} {
+		settings.TableColumns = columns
+		if err := store.SaveSettings(settings); err == nil {
+			t.Fatalf("invalid columns accepted: %v", columns)
+		}
 	}
 }

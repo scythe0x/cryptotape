@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { Check } from 'lucide-react'
+import './controls.css'
 import type { ListingSource } from '../api'
 import { desktop, events } from '../api'
 import { useTranslation } from '../i18n'
@@ -57,7 +59,10 @@ export function ListingSourceSettings() {
       }}
     >
       <div className="listing-key-field">
-        <label htmlFor="listing-key">{t('listingKey')}</label>
+        <div className="listing-key-heading">
+          <label htmlFor="listing-key">{t('listingKey')}</label>
+          {source?.keyConfigured && <span className="listing-key-saved"><Check size={12} />{t('keySaved')}</span>}
+        </div>
         <Input
           id="listing-key"
           type="password"
@@ -65,7 +70,7 @@ export function ListingSourceSettings() {
           spellCheck={false}
           value={key}
           onChange={(event) => setKey(event.target.value)}
-          placeholder={source?.keyConfigured ? t('keyConfigured') : undefined}
+          placeholder={source?.keyConfigured ? '********' : undefined}
           aria-describedby="listing-key-help"
         />
         <p className="muted" id="listing-key-help">

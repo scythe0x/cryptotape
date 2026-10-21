@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
+
+	"cryptotape/internal/core"
 )
 
 type OpenResult struct {
@@ -32,18 +35,21 @@ func (c *Controller) OpenTerminals(id int64, symbol string, terminals []string) 
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	var exchanges []string
+	exchanges := core.DefaultOpenExchanges()
+	var ruleID int64
 	if id > 0 {
 		alerts, err := c.store.ListAlerts(ctx, id+1, 1)
 		if err != nil {
 			return OpenResult{Error: err.Error()}
 		}
-		if len(alerts) == 1 && alerts[0].ID == id && alerts[0].Listing != nil {
-			exchanges = alerts[0].OpenExchanges
-			symbol = alerts[0].Symbol
+		if len(alerts) != 1 || alerts[0].ID != id {
+			return OpenResult{Error: "alert not found"}
 		}
+		ruleID = alerts[0].RuleID
+		exchanges = alerts[0].OpenExchanges
+		symbol = alerts[0].Symbol
 	}
-	opened, err := c.openInTerminals(ctx, symbol, terminals, exchanges...)
+	opened, err := c.openInTerminals(ctx, symbol, terminals, ruleID, exchanges)
 	result := OpenResult{Opened: opened}
 	status := "manual-ok"
 	if err != nil {
@@ -59,7 +65,7 @@ func (c *Controller) OpenTerminals(id int64, symbol string, terminals []string) 
 
 func (c *Controller) openInTerminal(ctx context.Context, symbol, terminal string, exchanges ...string) error {
 	if len(exchanges) == 0 {
-		exchanges = []string{"binance"}
+		return errors.New("no enabled exchanges")
 	}
 	var unavailable []error
 	for _, exchange := range exchanges {
@@ -86,7 +92,10 @@ func (c *Controller) openInTerminal(ctx context.Context, symbol, terminal string
 	return errors.Join(unavailable...)
 }
 
-func (c *Controller) openInTerminals(ctx context.Context, symbol string, terminals []string, exchanges ...string) (int, error) {
+func (c *Controller) openInTerminals(ctx context.Context, symbol string, terminals []string, ruleID int64, exchanges []string) (int, error) {
+	if len(c.currentOpenExchanges(ruleID, exchanges)) == 0 {
+		return 0, errors.New("no enabled exchanges")
+	}
 	if len(terminals) == 0 || len(terminals) > 2 {
 		return 0, errors.New("choose a terminal")
 	}
@@ -108,7 +117,7 @@ func (c *Controller) openInTerminals(ctx context.Context, symbol string, termina
 		return 0, errors.New("controller closed")
 	}
 	for _, terminal := range terminals {
-		c.enqueueTerminal(terminalJob{symbol: symbol, exchanges: exchanges, terminal: terminal, queued: time.Now(), expires: deadline,
+		c.enqueueTerminal(terminalJob{symbol: symbol, ruleID: ruleID, exchanges: exchanges, terminal: terminal, queued: time.Now(), expires: deadline,
 			complete: func(err error, _ string) {
 				if err != nil {
 					err = fmt.Errorf("%s: %w", terminal, err)
@@ -133,4 +142,15 @@ func (c *Controller) openInTerminals(ctx context.Context, symbol string, termina
 		}
 	}
 	return opened, errors.Join(failures...)
+}
+
+func (c *Controller) currentOpenExchanges(ruleID int64, saved []string) []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, rule := range c.rules {
+		if rule.ID == ruleID {
+			return slices.Clone(rule.OpenExchanges)
+		}
+	}
+	return slices.Clone(saved)
 }

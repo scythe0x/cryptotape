@@ -18,6 +18,7 @@ vi.mock('@wailsio/runtime', () => ({
   },
 }))
 const settings = (language: 'en' | 'ru'): Settings => ({
+  tableColumns: ['time', 'ticker', 'event', 'terminals'],
   language,
   proxies: [], activeProxyId: '',
   monitorId: '',

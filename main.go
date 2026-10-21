@@ -25,12 +25,14 @@ type Monitor struct {
 }
 
 type DesktopService struct {
-	controller *desktop.Controller
-	app        *application.App
-	overlay    *application.WebviewWindow
-	overlayMu  sync.Mutex
-	visible    bool
-	latestID   int64
+	controller      *desktop.Controller
+	app             *application.App
+	overlay         *application.WebviewWindow
+	overlayMu       sync.Mutex
+	visible         bool
+	latestID        int64
+	hiddenThroughID int64
+	overlayHeight   int
 }
 
 func (s *DesktopService) GetSnapshot() (core.Snapshot, error) {
@@ -53,8 +55,14 @@ func (s *DesktopService) SaveSettings(settings core.Settings) error {
 	if err := s.controller.SaveSettings(settings); err != nil {
 		return err
 	}
+	s.overlayMu.Lock()
 	s.placeOverlay(settings.MonitorID)
+	s.overlayMu.Unlock()
 	return nil
+}
+
+func (s *DesktopService) SetTableColumns(columns []core.TableColumnID) error {
+	return s.controller.SetTableColumns(columns)
 }
 
 func (s *DesktopService) SaveProxy(profile core.ProxyProfile, use bool) error {
@@ -114,11 +122,12 @@ func (s *DesktopService) PreviewSound(id string, volume float64) error {
 func (s *DesktopService) HideOverlay(afterID int64) {
 	s.overlayMu.Lock()
 	defer s.overlayMu.Unlock()
-	if afterID < s.latestID {
+	if afterID < s.latestID || s.overlay == nil {
 		return
 	}
 	s.overlay.Hide()
 	s.visible = false
+	s.hiddenThroughID = max(s.hiddenThroughID, afterID)
 }
 
 func (s *DesktopService) showOverlay(id int64) {
@@ -128,9 +137,18 @@ func (s *DesktopService) showOverlay(id int64) {
 		return
 	}
 	s.latestID = max(s.latestID, id)
+}
+
+func (s *DesktopService) ResizeOverlay(height int, afterID int64) {
+	s.overlayMu.Lock()
+	defer s.overlayMu.Unlock()
+	if height <= 0 || afterID < s.latestID || afterID <= s.hiddenThroughID || s.overlay == nil || !s.controller.BannersEnabled() {
+		return
+	}
+	s.overlayHeight = height
+	s.placeOverlay(s.controller.MonitorID())
 	if !s.visible {
 		s.overlay.Show()
-		s.placeOverlay(s.controller.MonitorID())
 		s.visible = true
 	}
 }
@@ -155,9 +173,13 @@ func (s *DesktopService) placeOverlay(monitorID string) {
 	if screen == nil {
 		return
 	}
-	const width, height, margin = 360, 300, 16
-	area := screen.WorkArea
-	s.overlay.SetPosition(area.X+area.Width-width-margin, area.Y+area.Height-height-margin)
+	s.overlay.SetBounds(overlayBounds(screen.WorkArea, s.overlayHeight))
+}
+
+func overlayBounds(area application.Rect, height int) application.Rect {
+	const width, margin = 360, 16
+	height = max(1, min(height, area.Height-2*margin))
+	return application.Rect{X: area.X + area.Width - width - margin, Y: area.Y + area.Height - height - margin, Width: width, Height: height}
 }
 
 func main() {
@@ -174,6 +196,7 @@ func main() {
 			service.overlayMu.Lock()
 			service.overlay.Hide()
 			service.visible = false
+			service.hiddenThroughID = max(service.hiddenThroughID, service.latestID)
 			service.overlayMu.Unlock()
 		}
 		if service.app != nil {

@@ -6,6 +6,8 @@ import { AlertBadge } from './AlertBadge'
 import { useTranslation, soundLabel } from '../i18n'
 import { Button } from './ui'
 import { exchangeLabel } from '../listings'
+import { terminals } from './TerminalButton'
+import './controls.css'
 
 type Props = { rules: Rule[]; sounds: string[]; onSaved: () => void }
 
@@ -28,47 +30,50 @@ export function RulesSettings({ rules, sounds, onSaved }: Props) {
             }}
           >
             <AlertBadge name={rule.name} color={rule.color} />
-            <span className="rule-meta">
-              <strong>
-                {rule.kind === 'listing' ? (
-                  t('externalListingAlert')
-                ) : (
-                  <>
-                    ±{rule.percent}% /{' '}
-                    {rule.windowSeconds < 60
-                      ? `${rule.windowSeconds}${t('secondsShort')}`
-                      : `${rule.windowSeconds / 60}${t('minutesShort')}`}
-                  </>
-                )}
-              </strong>
-              <span>
-                {rule.kind === 'listing' ? (
-                  rule.listingExchanges?.length ? (
-                    rule.listingExchanges.map(exchangeLabel).join(', ')
+            <span className="rule-meta-row">
+              {rule.terminals.length > 0 && (
+                <span className="rule-terminals">
+                  {terminals.filter((terminal) => rule.terminals.includes(terminal.id)).map((terminal) => (
+                    <img key={terminal.id} className="rule-terminal-icon" src={terminal.icon} alt={terminal.name} title={terminal.name} draggable={false} />
+                  ))}
+                </span>
+              )}
+              <span className="rule-meta">
+                <strong>
+                  {rule.kind === 'listing' ? (
+                    t('externalListingAlert')
                   ) : (
-                    t('allExternalExchanges')
-                  )
-                ) : (
-                  <>
-                    $
-                    {new Intl.NumberFormat(i18n.language, {
-                      notation: 'compact',
-                    }).format(rule.minQuoteVolume)}{' '}
-                    / {t('hours24')}
-                  </>
-                )}
-              </span>
-              <span>
-                {soundLabel(rule.sound)}
-                {rule.sound !== 'none' && ` · ${Math.round(rule.volume * 100)}%`}
-              </span>
+                    <>
+                      ±{rule.percent}% /{' '}
+                      {rule.windowSeconds < 60
+                        ? `${rule.windowSeconds}${t('secondsShort')}`
+                        : `${rule.windowSeconds / 60}${t('minutesShort')}`}
+                    </>
+                  )}
+                </strong>
+                <span>
+                  {rule.kind === 'listing' ? (
+                    rule.listingExchanges?.length ? (
+                      rule.listingExchanges.map(exchangeLabel).join(', ')
+                    ) : (
+                      t('allExternalExchanges')
+                    )
+                  ) : (
+                    <>
+                      $
+                      {new Intl.NumberFormat(i18n.language, {
+                        notation: 'compact',
+                      }).format(rule.minQuoteVolume)}{' '}
+                      / {t('hours24')}
+                    </>
+                  )}
+                </span>
+                <span>
+                  {soundLabel(rule.sound)}
+                  {rule.sound !== 'none' && ` · ${Math.round(rule.volume * 100)}%`}
+                </span>
             </span>
-            {rule.terminals.length > 0 && (
-              <span className="rule-terminals">
-                {rule.terminals.map((id) => (id === 'vataga' ? 'Vataga' : 'Tiger')).join(' · ')} ·{' '}
-                {t('auto')}
-              </span>
-            )}
+            </span>
           </button>
         ))}
         <Button

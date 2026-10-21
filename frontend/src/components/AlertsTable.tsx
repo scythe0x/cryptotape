@@ -1,16 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-  type ColumnDef,
-  type SortingState,
-} from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowUp, Check } from 'lucide-react'
-import type { Alert, Rule, TerminalID } from '../api'
-import { desktop } from '../api'
+import type { Alert, Rule, TableColumnID, TerminalID } from '../api'
+import { desktop, defaultTableColumns } from '../api'
 import { useTranslation } from '../i18n'
 import { localizeDiagnostic } from '../i18n/diagnostics'
 import { Ticker } from './Ticker'
@@ -19,6 +11,8 @@ import { AlertBadge } from './AlertBadge'
 import { ExchangeIcon } from './ExchangeIcon'
 import { TerminalButton, terminals } from './TerminalButton'
 import { ListingSummary } from './ListingSummary'
+import { ScrollArea } from './ScrollArea'
+import './alerts-table.css'
 
 type Props = {
   alerts: Alert[]
@@ -26,11 +20,15 @@ type Props = {
   hasMore: boolean
   loadMore: () => void
   onError: (error: string) => void
+  columns?: TableColumnID[]
 }
 
-export function AlertsTable({ alerts, rules, hasMore, loadMore, onError }: Props) {
+export function sortAlerts(alerts: readonly Alert[]): Alert[] {
+  return [...alerts].sort((left, right) => right.createdAtMs - left.createdAtMs || right.id - left.id)
+}
+
+export function AlertsTable({ alerts, rules, hasMore, loadMore, onError, columns = defaultTableColumns }: Props) {
   const { t } = useTranslation()
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'id', desc: true }])
   const [pausedAt, setPausedAt] = useState<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState('')
@@ -40,192 +38,137 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError }: Props
     return () => window.clearTimeout(timer)
   }, [copied])
 
-  const copy = useCallback(
-    async (symbol: string) => {
-      try {
-        await desktop.copySymbol(symbol)
-        setCopied(symbol)
-      } catch (error) {
-        onError(String(error))
-      }
-    },
-    [onError],
-  )
-  const open = useCallback(
-    async (alert: Alert, terminal: TerminalID) => {
-      try {
-        await desktop.openTerminal(alert.id, alert.symbol, terminal)
-      } catch (error) {
-        onError(`terminal: ${String(error)}`)
-      }
-    },
-    [onError],
-  )
+  const copy = useCallback(async (symbol: string) => {
+    try {
+      await desktop.copySymbol(symbol)
+      setCopied(symbol)
+    } catch (error) {
+      onError(String(error))
+    }
+  }, [onError])
+  const open = useCallback(async (alert: Alert, terminal: TerminalID) => {
+    try {
+      await desktop.openTerminal(alert.id, alert.symbol, terminal)
+    } catch (error) {
+      onError(`terminal: ${String(error)}`)
+    }
+  }, [onError])
   const colors = useMemo(() => new Map(rules.map((rule) => [rule.id, rule.color])), [rules])
-  const columns = useMemo<ColumnDef<Alert>[]>(
-    () => [
-      {
-        accessorKey: 'id',
-        header: t('time'),
-        cell: ({ row }) =>
-          new Date(row.original.createdAtMs).toLocaleTimeString('en-GB', {
-            hour12: false,
-          }),
-        size: 70,
-      },
-      {
-        accessorKey: 'symbol',
-        header: t('ticker'),
-        cell: ({ row }) => (
-          <button
-            className="ticker-button"
-            title={t('copySymbol', { symbol: row.original.symbol })}
-            onClick={() => void copy(row.original.symbol)}
-          >
-            {copied === row.original.symbol ? <Check size={12} /> : <ExchangeIcon exchange={row.original.listing?.exchange ?? 'binance'} />}
-            <strong>
-              <Ticker symbol={row.original.symbol} />
-            </strong>
-          </button>
-        ),
-        size: 135,
-      },
-      {
-        accessorKey: 'changePercent',
-        header: t('alertEvent'),
-        cell: ({ row }) =>
-          row.original.kind === 'listing' ? (
-            <ListingSummary alert={row.original} />
-          ) : (
-            <span className={row.original.direction === 'down' ? 'negative' : 'positive'}>
-              {row.original.changePercent > 0 ? '+' : ''}
-              {row.original.changePercent.toFixed(2)}%
-            </span>
-          ),
-        size: 80,
-      },
-      {
-        accessorKey: 'ruleName',
-        header: t('alert'),
-        cell: ({ row }) => (
-          <AlertBadge
-            name={row.original.ruleName}
-            color={colors.get(row.original.ruleId) ?? row.original.color}
-          />
-        ),
-        size: 95,
-      },
-      {
-        id: 'terminals',
-        header: '',
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div className="feed-terminals">
-            {terminals.map(({ id }) => (
-              <TerminalButton key={id} id={id} onClick={() => void open(row.original, id)} />
-            ))}
-          </div>
-        ),
-        size: 60,
-      },
-    ],
-    [colors, copy, copied, open, t],
-  )
-
-  const gridTemplateColumns = columns
-    .map((column) => `minmax(0, ${column.size ?? 150}fr)`)
-    .join(' ')
-
-  const table = useReactTable({
-    data: alerts,
-    columns,
-    state: { sorting },
-    onSortingChange: (updater) => {
-      setSorting(updater)
-      setPausedAt(null)
-      scrollRef.current?.scrollTo({ top: 0 })
-    },
-    getRowId: (alert) => String(alert.id),
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-  })
-  const rows = table.getRowModel().rows
+  const rows = useMemo(() => sortAlerts(alerts), [alerts])
   const getItemKey = useCallback((index: number) => rows[index].id, [rows])
   const virtualizer = useVirtualizer({
-    count: rows.length,
+    count: columns.length ? rows.length : 0,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 40,
     overscan: 8,
     getItemKey,
     anchorTo: pausedAt === null ? 'start' : 'end',
   })
-  useAlertRendered(
-    virtualizer.getVirtualItems().map((item) => rows[item.index].original.id),
-    'feed',
-  )
+  useEffect(() => {
+    const element = scrollRef.current
+    if (!element) return
+    const observer = new ResizeObserver(() => virtualizer.measure())
+    observer.observe(element)
+    virtualizer.measure()
+    return () => observer.disconnect()
+  }, [columns, virtualizer])
+  useAlertRendered(virtualizer.getVirtualItems().map((item) => rows[item.index].id), 'feed')
   const unseen = pausedAt === null ? 0 : alerts.filter((alert) => alert.id > pausedAt).length
+  const widths: Record<TableColumnID, string> = {
+    time: '66px',
+    ticker: 'minmax(90px, 120px)',
+    event: 'minmax(0, 1fr)',
+    terminals: '58px',
+  }
+  const gridTemplateColumns = columns.map((column) => widths[column]).join(' ')
+  const headers: Record<TableColumnID, string> = {
+    time: t('time'),
+    ticker: t('ticker'),
+    event: t('alertEvent'),
+    terminals: t('terminal'),
+  }
 
   function onScroll() {
     const element = scrollRef.current
-    if (element) {
-      if (element.scrollTop <= 8) setPausedAt(null)
-      else setPausedAt((current) => current ?? alerts[0]?.id ?? 0)
+    if (!element) return
+    if (element.scrollTop <= 8) {
+      setPausedAt(null)
+    } else {
+      setPausedAt((current) => current ?? alerts.reduce((newest, alert) => Math.max(newest, alert.id), 0))
     }
-    if (
-      element &&
-      hasMore &&
-      element.scrollHeight - element.scrollTop - element.clientHeight < 260
-    ) {
+
+    if (hasMore && element.scrollHeight - element.scrollTop - element.clientHeight < 260) {
       loadMore()
     }
   }
 
+  function renderCell(alert: Alert, column: TableColumnID) {
+    switch (column) {
+      case 'time':
+        return new Date(alert.createdAtMs).toLocaleTimeString('en-GB', { hour12: false })
+      case 'ticker':
+        return (
+          <button
+            className="ticker-button"
+            title={t('copySymbol', { symbol: alert.symbol })}
+            onClick={() => void copy(alert.symbol)}
+          >
+            {copied === alert.symbol ? <Check size={12} /> : <ExchangeIcon exchange={alert.listing?.exchange ?? 'binance'} />}
+            <strong><Ticker symbol={alert.symbol} /></strong>
+          </button>
+        )
+      case 'event':
+        return (
+          <div className="feed-event">
+            <AlertBadge name={alert.ruleName} color={colors.get(alert.ruleId) ?? alert.color} />
+            {alert.kind === 'listing' ? <ListingSummary alert={alert} /> : (
+              <span className={alert.direction === 'down' ? 'negative' : 'positive'}>
+                {alert.changePercent > 0 ? '+' : ''}{alert.changePercent.toFixed(2)}%
+              </span>
+            )}
+          </div>
+        )
+      case 'terminals':
+        return (
+          <div className="feed-terminals">
+            {terminals.map(({ id }) => (
+              <TerminalButton key={id} id={id} onClick={() => void open(alert, id)} />
+            ))}
+          </div>
+        )
+    }
+  }
+
   return (
-    <section className="feed-panel">
+    <section className="feed-panel measured-feed">
       <div className="table-header" style={{ gridTemplateColumns }}>
-        {table.getHeaderGroups().map((group) =>
-          group.headers.map((header) =>
-            header.column.getCanSort() ? (
-              <button key={header.id} onClick={header.column.getToggleSortingHandler()}>
-                {flexRender(header.column.columnDef.header, header.getContext())}
-              </button>
-            ) : (
-              <div key={header.id} aria-hidden="true" />
-            ),
-          ),
-        )}
+        {columns.map((column) => (
+          <div key={column} className="feed-column-heading">{headers[column]}</div>
+        ))}
       </div>
-      <div
-        className="table-scroll"
-        ref={scrollRef}
+      <ScrollArea
+        className="table-scroll-area"
+        viewportClassName="table-scroll"
+        viewportRef={scrollRef}
         onScroll={onScroll}
-        role="region"
-        aria-label={t('alertHistory')}
-        tabIndex={0}
+        viewportLabel={t('alertHistory')}
       >
-        {rows.length === 0 ? (
-          <div className="empty-state">{t('waitingAlerts')}</div>
-        ) : (
+        {rows.length === 0 ? <div className="empty-state">{t('waitingAlerts')}</div> : columns.length > 0 && (
           <div className="virtual-body" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map((item) => {
-              const row = rows[item.index]
+              const alert = rows[item.index]
               return (
                 <div
-                  key={row.id}
+                  key={alert.id}
+                  data-index={item.index}
+                  ref={virtualizer.measureElement}
                   className="table-row"
-                  style={{
-                    transform: `translateY(${item.start}px)`,
-                    gridTemplateColumns,
-                  }}
-                  title={
-                    row.original.terminalError
-                      ? localizeDiagnostic(row.original.terminalError)
-                      : undefined
-                  }
+                  style={{ transform: `translateY(${item.start}px)`, gridTemplateColumns }}
+                  title={alert.terminalError ? localizeDiagnostic(alert.terminalError) : undefined}
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <div key={cell.id} className="table-cell">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  {columns.map((column) => (
+                    <div key={column} className={`table-cell feed-cell-${column}`}>
+                      {renderCell(alert, column)}
                     </div>
                   ))}
                 </div>
@@ -233,8 +176,8 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError }: Props
             })}
           </div>
         )}
-        {hasMore && <div className="more-row">{t('olderAlerts')}</div>}
-      </div>
+        {hasMore && columns.length > 0 && <div className="more-row">{t('olderAlerts')}</div>}
+      </ScrollArea>
       {unseen > 0 && (
         <button
           className="new-alerts"
@@ -243,8 +186,7 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError }: Props
             virtualizer.scrollToOffset(0)
           }}
         >
-          <ArrowUp size={12} />
-          {t('newAlerts', { count: unseen })}
+          <ArrowUp size={12} />{t('newAlerts', { count: unseen })}
         </button>
       )}
     </section>

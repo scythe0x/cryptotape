@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Settings2 } from 'lucide-react'
 import { desktop, events } from './api'
 import { SoundToggle } from './components/SoundToggle'
+import { TableColumns } from './components/TableColumns'
 import { ConnectionStatus } from './components/ConnectionStatus'
 import { AlertsTable } from './components/AlertsTable'
 import { SettingsDialog } from './components/SettingsDialog'
@@ -111,6 +112,7 @@ export function App() {
         <ConnectionStatus health={health} />
         <div className="connection-actions">
           <SoundToggle settings={settings} onError={setError} />
+          {settings && <TableColumns settings={settings} onError={setError} />}
           <Button
             size="icon"
             variant="ghost"
@@ -130,6 +132,7 @@ export function App() {
       )}
       <AlertsTable
         alerts={alerts}
+        columns={settings?.tableColumns}
         rules={rules}
         hasMore={hasMore}
         loadMore={() => void loadMore()}

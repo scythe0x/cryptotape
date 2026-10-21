@@ -13,6 +13,8 @@ import (
 type terminalJob struct {
 	exchanges []string
 	alertID   int64
+	ruleID    int64
+	automatic bool
 	symbol    string
 	terminal  string
 	queued    time.Time
@@ -43,10 +45,15 @@ func (c *Controller) startTerminals() {
 						}
 						ctx, cancel := context.WithDeadline(context.Background(), deadline)
 						started := time.Now()
-						c.markTerminal(job.alertID, false)
-						err = c.openInTerminal(ctx, job.symbol, job.terminal, job.exchanges...)
-						c.terminalRequestMs.Store(time.Since(started).Milliseconds())
-						c.markTerminal(job.alertID, true)
+						exchanges := c.currentOpenExchanges(job.ruleID, job.exchanges)
+						if len(exchanges) == 0 && job.automatic {
+							status = "skipped"
+						} else {
+							c.markTerminal(job.alertID, false)
+							err = c.openInTerminal(ctx, job.symbol, job.terminal, exchanges...)
+							c.terminalRequestMs.Store(time.Since(started).Milliseconds())
+							c.markTerminal(job.alertID, true)
+						}
 						cancel()
 						if err != nil {
 							status = "error"
@@ -78,17 +85,23 @@ func (c *Controller) enqueueAutomatic(alert core.Alert, expires time.Time) {
 	if len(alert.Terminals) == 0 {
 		return
 	}
+	if len(c.currentOpenExchanges(alert.RuleID, alert.OpenExchanges)) == 0 {
+		c.saveTerminalResult(alert.ID, "skipped", "")
+		return
+	}
 	var mu sync.Mutex
 	remaining := len(alert.Terminals)
 	status := "ok"
 	var failures []error
 	for _, terminal := range alert.Terminals {
-		c.enqueueTerminal(terminalJob{alertID: alert.ID, symbol: alert.Symbol, exchanges: alert.OpenExchanges, terminal: terminal, queued: time.Now(), expires: expires,
+		c.enqueueTerminal(terminalJob{alertID: alert.ID, ruleID: alert.RuleID, automatic: true, symbol: alert.Symbol, exchanges: alert.OpenExchanges, terminal: terminal, queued: time.Now(), expires: expires,
 			complete: func(err error, outcome string) {
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
 					failures = append(failures, fmt.Errorf("%s: %w", terminal, err))
+					status = outcome
+				} else if outcome == "skipped" && status == "ok" {
 					status = outcome
 				}
 				remaining--

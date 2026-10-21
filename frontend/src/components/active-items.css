@@ -1,0 +1,10 @@
+.active-items { display: grid; gap: 10px; min-width: 0; }
+.active-items-label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; }
+.active-items-list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 44px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: #171717; }
+.active-items-inactive .active-items-list { border-style: dashed; background: #151515; }
+.active-items-inactive .active-items-item { filter: grayscale(1); opacity: .55; }
+.active-items-zone.is-drop-target .active-items-list { border-color: #818cf8; background: #22212d; }
+.active-items-item { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 30px; padding: 6px 8px; border: 1px solid #393939; border-radius: 4px; background: #262626; color: #ddd; font: inherit; font-size: 11px; cursor: grab; touch-action: none; }
+.active-items-item:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+.active-items-item.is-dragging { opacity: .5; }
+.active-items-item .exchange-icon { width: 20px; height: 20px; }

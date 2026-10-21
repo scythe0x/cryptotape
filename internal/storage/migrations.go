@@ -7,7 +7,7 @@ func migrate(db *sql.DB) error {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version >= 5 {
+	if version >= 6 {
 		return nil
 	}
 	tx, err := db.Begin()
@@ -57,12 +57,19 @@ func migrate(db *sql.DB) error {
 			`PRAGMA user_version=4`,
 		)
 	}
+	if version < 5 {
+		statements = append(statements,
+			`ALTER TABLE rules ADD COLUMN open_exchanges TEXT NOT NULL DEFAULT '[]'`,
+			`ALTER TABLE alerts ADD COLUMN open_exchanges TEXT NOT NULL DEFAULT '[]'`,
+			`UPDATE rules SET open_exchanges='["binance","bybit","okx","gate"]' WHERE kind='listing'`,
+			`UPDATE alerts SET open_exchanges='["binance","bybit","okx","gate"]' WHERE kind='listing'`,
+			`PRAGMA user_version=5`,
+		)
+	}
 	statements = append(statements,
-		`ALTER TABLE rules ADD COLUMN open_exchanges TEXT NOT NULL DEFAULT '[]'`,
-		`ALTER TABLE alerts ADD COLUMN open_exchanges TEXT NOT NULL DEFAULT '[]'`,
-		`UPDATE rules SET open_exchanges='["binance","bybit","okx","gate"]' WHERE kind='listing'`,
-		`UPDATE alerts SET open_exchanges='["binance","bybit","okx","gate"]' WHERE kind='listing'`,
-		`PRAGMA user_version=5`,
+		`UPDATE rules SET open_exchanges='["binance","bybit","okx","gate"]' WHERE kind='price_move'`,
+		`UPDATE alerts SET open_exchanges='["binance","bybit","okx","gate"]' WHERE kind='price_move'`,
+		`PRAGMA user_version=6`,
 	)
 	for _, statement := range statements {
 		if _, err = tx.Exec(statement); err != nil {

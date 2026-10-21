@@ -16,6 +16,7 @@ func (c *Controller) SaveSettings(settings core.Settings) error {
 	settings.Proxies = slices.Clone(c.settings.Proxies)
 	settings.ActiveProxyID = c.settings.ActiveProxyID
 	settings.SoundMuted = c.settings.SoundMuted
+	settings.TableColumns = slices.Clone(c.settings.TableColumns)
 	c.mu.RUnlock()
 	return c.applySettings(settings)
 }
@@ -50,6 +51,7 @@ func (c *Controller) proxySettings() core.Settings {
 	defer c.mu.RUnlock()
 	settings := c.settings
 	settings.Proxies = append([]core.ProxyProfile{}, settings.Proxies...)
+	settings.TableColumns = slices.Clone(settings.TableColumns)
 	return settings
 }
 
@@ -119,4 +121,15 @@ func (c *Controller) BannersEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.settings.BannersEnabled
+}
+
+func (c *Controller) SetTableColumns(columns []core.TableColumnID) error {
+	if err := core.ValidateTableColumns(columns); err != nil {
+		return err
+	}
+	c.settingsMu.Lock()
+	defer c.settingsMu.Unlock()
+	settings := c.proxySettings()
+	settings.TableColumns = append([]core.TableColumnID{}, columns...)
+	return c.applySettings(settings)
 }

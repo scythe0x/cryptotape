@@ -7,6 +7,7 @@ import { useTranslation } from '../i18n'
 import { localizeDiagnostic } from '../i18n/diagnostics'
 import { nextProxyName, parseProxy } from '../proxies'
 import { Button, Checkbox, Input } from './ui'
+import { ScrollArea } from './ScrollArea'
 
 type Props = {
   open: boolean
@@ -21,7 +22,7 @@ export function ProxyDialog(props: Props) {
     <Dialog.Root open={props.open} onOpenChange={props.onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="dialog-content">
+        <Dialog.Content className="dialog-content scroll-dialog">
           <ProxyEditor {...props} />
         </Dialog.Content>
       </Dialog.Portal>
@@ -94,92 +95,94 @@ function ProxyEditor({ profile, settings, onSaved, onOpenChange }: Props) {
         </Dialog.Close>
       </div>
       <Dialog.Description className="sr-only">{t('proxyDescription')}</Dialog.Description>
-      <form className="form-stack" onSubmit={save}>
-        <label>
-          {t('name')}
-          <Input
-            required
-            maxLength={60}
-            value={draft.name}
-            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-          />
-        </label>
-        <div className="form-grid proxy-endpoint">
+      <ScrollArea className="dialog-body-scroll">
+        <form className="form-stack" onSubmit={save}>
           <label>
-            {t('proxyHost')}
+            {t('name')}
             <Input
               required
-              value={draft.host}
-              placeholder="127.0.0.1"
-              onPaste={(event) => {
-                const parsed = parseProxy(event.clipboardData.getData('text'))
-                if (parsed) {
-                  event.preventDefault()
-                  setDraft((current) => ({ ...current, ...parsed }))
-                }
-              }}
-              onChange={(event) => setDraft({ ...draft, host: event.target.value })}
-              onBlur={() => {
-                const parsed = parseProxy(draft.host)
-                if (parsed) setDraft((current) => ({ ...current, ...parsed }))
-              }}
+              maxLength={60}
+              value={draft.name}
+              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            />
+          </label>
+          <div className="form-grid proxy-endpoint">
+            <label>
+              {t('proxyHost')}
+              <Input
+                required
+                value={draft.host}
+                placeholder="127.0.0.1"
+                onPaste={(event) => {
+                  const parsed = parseProxy(event.clipboardData.getData('text'))
+                  if (parsed) {
+                    event.preventDefault()
+                    setDraft((current) => ({ ...current, ...parsed }))
+                  }
+                }}
+                onChange={(event) => setDraft({ ...draft, host: event.target.value })}
+                onBlur={() => {
+                  const parsed = parseProxy(draft.host)
+                  if (parsed) setDraft((current) => ({ ...current, ...parsed }))
+                }}
+              />
+            </label>
+            <label>
+              {t('proxyPort')}
+              <Input
+                required
+                type="number"
+                min={1}
+                max={65535}
+                value={draft.port}
+                onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })}
+              />
+            </label>
+          </div>
+          <label>
+            {t('proxyLogin')}
+            <Input
+              autoComplete="off"
+              value={draft.login}
+              onChange={(event) => setDraft({ ...draft, login: event.target.value })}
             />
           </label>
           <label>
-            {t('proxyPort')}
+            {t('proxyPassword')}
             <Input
-              required
-              type="number"
-              min={1}
-              max={65535}
-              value={draft.port}
-              onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })}
+              type="password"
+              autoComplete="new-password"
+              value={draft.password}
+              onChange={(event) => setDraft({ ...draft, password: event.target.value })}
             />
           </label>
-        </div>
-        <label>
-          {t('proxyLogin')}
-          <Input
-            autoComplete="off"
-            value={draft.login}
-            onChange={(event) => setDraft({ ...draft, login: event.target.value })}
-          />
-        </label>
-        <label>
-          {t('proxyPassword')}
-          <Input
-            type="password"
-            autoComplete="new-password"
-            value={draft.password}
-            onChange={(event) => setDraft({ ...draft, password: event.target.value })}
-          />
-        </label>
-        <label className="checkbox-row">
-          <Checkbox checked={use} onChange={(event) => setUse(event.target.checked)} />
-          {t('useProxy')}
-        </label>
-        {error && <div className="inline-error">{localizeDiagnostic(error)}</div>}
-        <div className="dialog-actions">
-          {profile && (
-            <Button
-              type="button"
-              variant="ghost"
-              className="delete-rule"
-              disabled={saving}
-              onClick={() => void remove()}
-            >
-              <Trash2 size={12} />
-              {t(deleteArmed ? 'confirmDelete' : 'delete')}
+          <label className="checkbox-row">
+            <Checkbox checked={use} onChange={(event) => setUse(event.target.checked)} />
+            {t('useProxy')}
+          </label>
+          {error && <div className="inline-error">{localizeDiagnostic(error)}</div>}
+          <div className="dialog-actions">
+            {profile && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="delete-rule"
+                disabled={saving}
+                onClick={() => void remove()}
+              >
+                <Trash2 size={12} />
+                {t(deleteArmed ? 'confirmDelete' : 'delete')}
+              </Button>
+            )}
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              {t('cancel')}
             </Button>
-          )}
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-            {t('cancel')}
-          </Button>
-          <Button type="submit" variant="primary" disabled={saving}>
-            {t(saving ? 'saving' : 'saveProxy')}
-          </Button>
-        </div>
-      </form>
+            <Button type="submit" variant="primary" disabled={saving}>
+              {t(saving ? 'saving' : 'saveProxy')}
+            </Button>
+          </div>
+        </form>
+      </ScrollArea>
     </>
   )
 }

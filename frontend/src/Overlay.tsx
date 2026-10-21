@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { X } from 'lucide-react'
 import { ExchangeIcon } from './components/ExchangeIcon'
-import { AlertBadge } from './components/AlertBadge'
 import type { Alert, Settings } from './api'
 import { desktop, events } from './api'
 import { Ticker } from './components/Ticker'
@@ -20,6 +20,7 @@ export function Overlay() {
   const reducedMotion = useReducedMotion()
   const latestID = useRef(0)
   const dismissed = useRef(new Set<number>())
+  const stack = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let stopped = false
@@ -77,6 +78,30 @@ export function Overlay() {
     }
   }, [])
 
+  useLayoutEffect(() => {
+    const element = stack.current
+    if (!element || cards.length === 0) return
+    let frame = 0
+    let lastHeight = 0
+    const afterID = latestID.current
+    function measure() {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        const height = Math.ceil(element?.offsetHeight ?? 0)
+        if (height <= 0 || height === lastHeight) return
+        lastHeight = height
+        void desktop.resizeOverlay(height, afterID).catch((cause: unknown) => setError(String(cause)))
+      })
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    measure()
+    return () => {
+      observer.disconnect()
+      window.cancelAnimationFrame(frame)
+    }
+  }, [cards])
+
   useAlertRendered(
     cards.map((card) => card.id),
     'overlay',
@@ -102,14 +127,14 @@ export function Overlay() {
   }
 
   return (
-    <div className="overlay-root">
+    <div className="overlay-root" ref={stack}>
       {error && (
         <div className="overlay-error" onClick={() => setError('')}>
           {localizeDiagnostic(error)}
         </div>
       )}
       <AnimatePresence
-        mode="popLayout"
+        mode="sync"
         onExitComplete={() => {
           if (cards.length === 0) void desktop.hideOverlay(latestID.current)
         }}
@@ -117,6 +142,7 @@ export function Overlay() {
         {cards.map((alert) => (
           <motion.article
             className={`toast toast-${alert.kind === 'listing' ? 'listing' : alert.direction}`}
+            style={{ '--alert-color': alert.color } as CSSProperties}
             key={alert.id}
             layout="position"
             initial={
@@ -149,23 +175,16 @@ export function Overlay() {
                   <strong>
                     <Ticker symbol={alert.symbol} />
                     {alert.kind === 'listing' && alert.listing && (
-                      <span className="toast-event"> – {t(listingEventLabelKey(alert.listing.marketType))}</span>
+                      <span className="toast-event"> — {t(listingEventLabelKey(alert.listing.marketType))} {exchangeLabel(alert.listing.exchange)}</span>
                     )}
                   </strong>
                 </span>
-                <span className="toast-change">
-                  {alert.kind === 'listing' ? (
-                    <span className="toast-exchange">{exchangeLabel(alert.listing?.exchange ?? '')}</span>
-                  ) : (
-                    <>
-                      {alert.changePercent > 0 ? '+' : ''}
-                      {alert.changePercent.toFixed(2)}%
-                    </>
-                  )}
-                </span>
-              </div>
-              <div className="toast-bottom">
-                <AlertBadge name={alert.ruleName} color={alert.color} />
+                {alert.kind !== 'listing' && (
+                  <span className="toast-change">
+                    {alert.changePercent > 0 ? '+' : ''}
+                    {alert.changePercent.toFixed(2)}%
+                  </span>
+                )}
               </div>
             </button>
             <button

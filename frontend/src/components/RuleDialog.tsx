@@ -15,6 +15,8 @@ import { ListingFields } from './ListingFields'
 import { ExchangePriority } from './ExchangePriority'
 import { BannerDurationField } from './BannerDurationField'
 import { HelpTip } from './HelpTip'
+import { Select } from './Select'
+import { ScrollArea } from './ScrollArea'
 
 type Props = {
   open: boolean
@@ -26,7 +28,7 @@ type Props = {
 }
 const emptyRule: Rule = {
   bannerSeconds: 15,
-  openExchanges: [],
+  openExchanges: [...defaultOpenExchanges],
   kind: 'price_move',
   listingExchanges: [],
   listingTypes: [],
@@ -48,7 +50,7 @@ export function RuleDialog(props: Props) {
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
         <Dialog.Content
-          className="dialog-content"
+          className="dialog-content scroll-dialog"
           onOpenAutoFocus={(event) => {
             event.preventDefault()
             nameField.current?.focus()
@@ -73,9 +75,9 @@ function RuleEditor({
   const [draft, setDraft] = useState<Rule>(() => {
     if (!rule) return { ...emptyRule, name: t('priceMoveAlert'), color: nextAlertColor(rules) }
     if (rule.kind === 'listing' && !rule.listingExchanges?.length) {
-      return { ...rule, listingExchanges: [...listingExchanges] }
+      return { ...rule, listingExchanges: [...listingExchanges], openExchanges: rule.openExchanges ?? [...defaultOpenExchanges] }
     }
-    return rule
+    return { ...rule, openExchanges: rule.openExchanges ?? [...defaultOpenExchanges] }
   })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -140,152 +142,152 @@ function RuleEditor({
         </Dialog.Close>
       </div>
       <Dialog.Description className="sr-only">{t('alertDescription')}</Dialog.Description>
-      <form onSubmit={save} className="form-stack">
-        <label>
-          {t('alertType')}
-          <select
-            className="input"
-            value={draft.kind ?? 'price_move'}
-            onChange={(event) => {
-              const kind = ruleKindSchema.parse(event.target.value)
-              const previousName = t(draft.kind === 'listing' ? 'externalListingAlert' : 'priceMoveAlert')
-              const defaultName = t(kind === 'listing' ? 'externalListingAlert' : 'priceMoveAlert')
-              setDraft({
-                ...draft,
-                kind,
-                name: !draft.name.trim() || draft.name === previousName ? defaultName : draft.name,
-                percent: draft.percent || 5,
-                windowSeconds: draft.windowSeconds || 60,
-                listingTypes: draft.listingTypes?.length ? draft.listingTypes : ['spot'],
-                listingExchanges: draft.listingExchanges?.length ? draft.listingExchanges : [...listingExchanges],
-                openExchanges: kind === 'listing' ? [...defaultOpenExchanges] : [],
-              })
-            }}
-          >
-            <option value="price_move">{t('priceMoveAlert')}</option>
-            <option value="listing">{t('externalListingAlert')}</option>
-          </select>
-        </label>
-        <div className="name-field">
-          <label htmlFor="rule-name">{t('name')}</label>
-          <div className="input-row">
-            <Input
-              id="rule-name"
-              ref={nameField}
-              required
-              maxLength={60}
-              value={draft.name}
-              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              placeholder={t('namePlaceholder')}
+      <ScrollArea className="dialog-body-scroll">
+        <form onSubmit={save} className="form-stack">
+          <label>
+            {t('alertType')}
+            <Select
+              aria-label={t('alertType')}
+              value={draft.kind ?? 'price_move'}
+              onValueChange={(value) => {
+                const kind = ruleKindSchema.parse(value)
+                const previousName = t(draft.kind === 'listing' ? 'externalListingAlert' : 'priceMoveAlert')
+                const defaultName = t(kind === 'listing' ? 'externalListingAlert' : 'priceMoveAlert')
+                setDraft({
+                  ...draft,
+                  kind,
+                  name: !draft.name.trim() || draft.name === previousName ? defaultName : draft.name,
+                  percent: draft.percent || 5,
+                  windowSeconds: draft.windowSeconds || 60,
+                  listingTypes: draft.listingTypes?.length ? draft.listingTypes : ['spot'],
+                  listingExchanges: draft.listingExchanges?.length ? draft.listingExchanges : [...listingExchanges],
+                })
+              }}
+              options={[
+                { value: 'price_move', label: t('priceMoveAlert') },
+                { value: 'listing', label: t('externalListingAlert') },
+              ]}
             />
-            <ColorPicker value={draft.color} onChange={(color) => setDraft({ ...draft, color })} />
+          </label>
+          <div className="name-field">
+            <label htmlFor="rule-name">{t('name')}</label>
+            <div className="input-row">
+              <Input
+                id="rule-name"
+                ref={nameField}
+                required
+                maxLength={60}
+                value={draft.name}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                placeholder={t('namePlaceholder')}
+              />
+              <ColorPicker value={draft.color} onChange={(color) => setDraft({ ...draft, color })} />
+            </div>
           </div>
-        </div>
-        {draft.kind === 'listing' ? (
-          <ListingFields draft={draft} onChange={setDraft} />
-        ) : (
-          <>
-            <div className="form-grid">
-              <label>
-                {t('movement')}
-                <Input
-                  type="number"
-                  required
-                  min="0.1"
-                  max="100"
-                  step="0.1"
-                  value={draft.percent}
-                  onChange={(event) => setDraft({ ...draft, percent: Number(event.target.value) })}
-                />
-              </label>
-              <div className="window-field">
-                <div className="label-with-help">
-                  <label htmlFor="rule-window">{t('window')}</label>
-                  <HelpTip label={t('windowHelpLabel')}>{t('windowHelp')}</HelpTip>
+          {draft.kind === 'listing' ? (
+            <ListingFields draft={draft} onChange={setDraft} />
+          ) : (
+            <>
+              <div className="form-grid">
+                <label>
+                  {t('movement')}
+                  <Input
+                    type="number"
+                    required
+                    min="0.1"
+                    max="100"
+                    step="0.1"
+                    value={draft.percent}
+                    onChange={(event) => setDraft({ ...draft, percent: Number(event.target.value) })}
+                  />
+                </label>
+                <div className="window-field">
+                  <div className="label-with-help">
+                    <label htmlFor="rule-window">{t('window')}</label>
+                    <HelpTip label={t('windowHelpLabel')}>{t('windowHelp')}</HelpTip>
+                  </div>
+                  <Input
+                    id="rule-window"
+                    type="number"
+                    required
+                    min="5"
+                    max="600"
+                    step="1"
+                    value={draft.windowSeconds}
+                    onChange={(event) =>
+                      setDraft({ ...draft, windowSeconds: Number(event.target.value) })
+                    }
+                  />
                 </div>
+              </div>
+              <label>
+                {t('minTurnover')}
                 <Input
-                  id="rule-window"
                   type="number"
                   required
-                  min="5"
-                  max="600"
-                  step="1"
-                  value={draft.windowSeconds}
+                  min="0"
+                  step="any"
+                  value={draft.minQuoteVolume / 1_000_000}
                   onChange={(event) =>
-                    setDraft({ ...draft, windowSeconds: Number(event.target.value) })
+                    setDraft({ ...draft, minQuoteVolume: Number(event.target.value) * 1_000_000 })
                   }
                 />
-              </div>
+              </label>
+            </>
+          )}
+          <SoundField
+            sound={draft.sound}
+            volume={draft.volume}
+            sounds={sounds}
+            onChange={(sound) => setDraft((current) => ({ ...current, sound }))}
+            onVolume={(volume) => setDraft((current) => ({ ...current, volume }))}
+            onError={setError}
+          />
+          <BannerDurationField
+            value={draft.bannerSeconds}
+            onChange={(bannerSeconds) => setDraft((current) => ({ ...current, bannerSeconds }))}
+          />
+          <fieldset className="terminal-field">
+            <legend>{t('openAutomatically')}</legend>
+            <div className="terminal-choices">
+              {terminals.map(({ id }) => (
+                <TerminalButton
+                  key={id}
+                  id={id}
+                  toggle
+                  active={draft.terminals.includes(id)}
+                  onClick={() => toggleTerminal(id)}
+                />
+              ))}
             </div>
-            <label>
-              {t('minTurnover')}
-              <Input
-                type="number"
-                required
-                min="0"
-                step="any"
-                value={draft.minQuoteVolume / 1_000_000}
-                onChange={(event) =>
-                  setDraft({ ...draft, minQuoteVolume: Number(event.target.value) * 1_000_000 })
-                }
-              />
-            </label>
-          </>
-        )}
-        <SoundField
-          sound={draft.sound}
-          volume={draft.volume}
-          sounds={sounds}
-          onChange={(sound) => setDraft((current) => ({ ...current, sound }))}
-          onVolume={(volume) => setDraft((current) => ({ ...current, volume }))}
-          onError={setError}
-        />
-        <BannerDurationField
-          value={draft.bannerSeconds}
-          onChange={(bannerSeconds) => setDraft((current) => ({ ...current, bannerSeconds }))}
-        />
-        <fieldset className="terminal-field">
-          <legend>{t('openAutomatically')}</legend>
-          <div className="terminal-choices">
-            {terminals.map(({ id }) => (
-              <TerminalButton
-                key={id}
-                id={id}
-                toggle
-                active={draft.terminals.includes(id)}
-                onClick={() => toggleTerminal(id)}
-              />
-            ))}
-          </div>
-        </fieldset>
-        {draft.kind === 'listing' && (
+          </fieldset>
           <ExchangePriority
-            value={draft.openExchanges.length ? draft.openExchanges : defaultOpenExchanges}
+            value={draft.openExchanges}
             onChange={(openExchanges) => setDraft((current) => ({ ...current, openExchanges }))}
           />
-        )}
-        {error && <div className="inline-error">{localizeDiagnostic(error)}</div>}
-        <div className="dialog-actions">
-          {rule && (
-            <Button
-              type="button"
-              className="delete-rule"
-              variant="ghost"
-              disabled={saving}
-              onClick={() => void remove()}
-            >
-              <Trash2 size={12} />
-              {deleteArmed ? t('confirmDelete') : t('delete')}
+          {error && <div className="inline-error">{localizeDiagnostic(error)}</div>}
+          <div className="dialog-actions">
+            {rule && (
+              <Button
+                type="button"
+                className="delete-rule"
+                variant="ghost"
+                disabled={saving}
+                onClick={() => void remove()}
+              >
+                <Trash2 size={12} />
+                {deleteArmed ? t('confirmDelete') : t('delete')}
+              </Button>
+            )}
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              {t('cancel')}
             </Button>
-          )}
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-            {t('cancel')}
-          </Button>
-          <Button type="submit" variant="primary" disabled={saving}>
-            {saving ? t('saving') : t('saveAlert')}
-          </Button>
-        </div>
-      </form>
+            <Button type="submit" variant="primary" disabled={saving}>
+              {saving ? t('saving') : t('saveAlert')}
+            </Button>
+          </div>
+        </form>
+      </ScrollArea>
     </>
   )
 }

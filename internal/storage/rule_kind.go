@@ -9,22 +9,21 @@ import (
 )
 
 func validateRuleKind(rule *core.Rule) error {
+	if rule.OpenExchanges == nil {
+		rule.OpenExchanges = core.DefaultOpenExchanges()
+	}
+	if !validOpenExchanges(rule.OpenExchanges) {
+		return errors.New("invalid exchange priority")
+	}
+	rule.OpenExchanges = slices.Clone(rule.OpenExchanges)
 	switch rule.Kind {
 	case core.PriceMove:
 		if rule.Percent < 0.1 || rule.Percent > 100 || !finite(rule.Percent) || rule.WindowSeconds < 5 || rule.WindowSeconds > 600 || !finite(rule.MinQuoteVolume) || rule.MinQuoteVolume < 0 {
 			return errors.New("invalid alert rule")
 		}
-		rule.OpenExchanges = []string{}
 		rule.ListingExchanges = []string{}
 		rule.ListingTypes = []string{}
 	case core.Listing:
-		if len(rule.OpenExchanges) == 0 {
-			rule.OpenExchanges = core.DefaultOpenExchanges()
-		}
-		if !validOpenExchanges(rule.OpenExchanges) {
-			return errors.New("invalid exchange priority")
-		}
-		rule.OpenExchanges = slices.Clone(rule.OpenExchanges)
 		if len(rule.ListingExchanges) > 32 || len(rule.ListingTypes) == 0 || len(rule.ListingTypes) > 6 {
 			return errors.New("invalid listing filters")
 		}
@@ -64,7 +63,7 @@ func validBannerSeconds(seconds int) bool {
 }
 
 func validOpenExchanges(exchanges []string) bool {
-	if len(exchanges) != 4 {
+	if len(exchanges) > 4 {
 		return false
 	}
 	seen := make(map[string]bool, 4)

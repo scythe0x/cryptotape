@@ -194,6 +194,12 @@ func (s *Store) Settings() (core.Settings, error) {
 	if err := json.Unmarshal([]byte(payload), &settings); err != nil {
 		return settings, err
 	}
+	if settings.TableColumns == nil {
+		settings.TableColumns = core.DefaultTableColumns()
+	}
+	if err := core.ValidateTableColumns(settings.TableColumns); err != nil {
+		return settings, err
+	}
 	if settings.Proxies == nil {
 		settings.Proxies = []core.ProxyProfile{}
 	}
@@ -219,6 +225,12 @@ func (s *Store) Settings() (core.Settings, error) {
 }
 
 func (s *Store) SaveSettings(settings core.Settings) error {
+	if settings.TableColumns == nil {
+		settings.TableColumns = core.DefaultTableColumns()
+	}
+	if err := core.ValidateTableColumns(settings.TableColumns); err != nil {
+		return err
+	}
 	if settings.Language != "en" && settings.Language != "ru" {
 		return errors.New("unsupported interface language")
 	}
@@ -286,8 +298,11 @@ func insertAlert(ctx context.Context, tx *sql.Tx, candidate core.Candidate) (cor
 			return core.Alert{}, nil
 		}
 	}
+	if candidate.Rule.OpenExchanges == nil {
+		candidate.Rule.OpenExchanges = core.DefaultOpenExchanges()
+	}
 	status := "skipped"
-	if len(candidate.Rule.Terminals) > 0 {
+	if len(candidate.Rule.Terminals) > 0 && len(candidate.Rule.OpenExchanges) > 0 {
 		status = "pending"
 	}
 	alert := core.Alert{

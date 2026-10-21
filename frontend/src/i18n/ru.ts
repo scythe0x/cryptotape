@@ -1,6 +1,17 @@
 import type { en } from './en'
 
 export const ru = {
+  tableColumns: 'столбцы',
+  activeColumns: 'активные столбцы',
+  inactiveColumns: 'неактивные столбцы',
+  activeExchanges: 'активные биржи',
+  inactiveExchanges: 'отключенные биржи',
+  terminals: 'терминалы',
+  keySaved: 'ключ сохранен',
+  alertNotFound: 'алерт не найден',
+  noEnabledExchanges: 'нет активных бирж для открытия',
+  invalidTableColumns: 'некорректный список столбцов',
+
   proxies: 'прокси',
   noProxy: 'без прокси',
   addProxy: 'добавить прокси',
@@ -54,8 +65,6 @@ export const ru = {
   window: 'интервал, с',
   minTurnover: 'мин. оборот за 24 ч, млн $',
   openOnExchange: 'открывать на бирже',
-  exchangePriorityHelp: 'перетащи биржи: приоритет слева направо, фьючерсы USDT',
-  exchangePriorityItem: '{{exchange}}, приоритет {{position}}. перетащи или используй клавиши влево и вправо',
   openAutomatically: 'открывать в терминале',
   saveAlert: 'сохранить',
   delete: 'удалить',
@@ -115,7 +124,7 @@ export const ru = {
   pingDescription: 'время ответа websocket, медиана последних 5 измерений',
   muteSounds: 'выключить звуки',
   unmuteSounds: 'включить звуки',
-  bannersEnabled: 'баннеры в углу экрана',
+  bannersEnabled: 'показывать уведомления в углу экрана',
   quoteAge: 'возраст данных',
   noSound: 'без звука',
   binanceDisconnected: 'нет соединения с Binance',

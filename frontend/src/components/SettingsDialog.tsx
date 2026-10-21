@@ -10,6 +10,8 @@ import { localizeDiagnostic } from '../i18n/diagnostics'
 import { RulesSettings } from './RulesSettings'
 import { ProxySettings } from './ProxySettings'
 import { ListingSourceSettings } from './ListingSourceSettings'
+import { Select } from './Select'
+import { ScrollArea } from './ScrollArea'
 
 type Props = {
   open: boolean
@@ -25,7 +27,7 @@ export function SettingsDialog(props: Props) {
     <Dialog.Root open={props.open} onOpenChange={props.onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="dialog-content settings-dialog">
+        <Dialog.Content className="dialog-content settings-dialog scroll-dialog">
           <SettingsContent {...props} />
         </Dialog.Content>
       </Dialog.Portal>
@@ -80,98 +82,90 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
           <Tabs.Trigger value="listings">{t('listingsSource')}</Tabs.Trigger>
           <Tabs.Trigger value="general">{t('general')}</Tabs.Trigger>
         </Tabs.List>
-        <Tabs.Content value="alerts" className="settings-tab-content">
-          <RulesSettings rules={rules} sounds={sounds} onSaved={onSaved} />
-        </Tabs.Content>
-        <Tabs.Content value="proxies">
-          <ProxySettings settings={settings} onSaved={onSaved} />
-        </Tabs.Content>
-        <Tabs.Content value="listings" className="settings-tab-content">
-          <ListingSourceSettings />
-        </Tabs.Content>
-        <Tabs.Content value="general">
-          <form onSubmit={save} className="form-stack">
-            <label>
-              {t('language')}
-              <select
-                className="input"
-                value={draft.language}
-                onChange={(event) =>
-                  setDraft({ ...draft, language: languageSchema.parse(event.target.value) })
-                }
-              >
-                <option value="en">English</option>
-                <option value="ru">Русский</option>
-              </select>
-            </label>
-            <label className="checkbox-row">
-              <Checkbox
-                checked={draft.bannersEnabled}
-                onChange={(event) => setDraft({ ...draft, bannersEnabled: event.target.checked })}
-              />
-              {t('bannersEnabled')}
-            </label>
-            <div className="form-grid">
+        <ScrollArea className="settings-body-scroll">
+          <Tabs.Content value="alerts" className="settings-tab-content">
+            <RulesSettings rules={rules} sounds={sounds} onSaved={onSaved} />
+          </Tabs.Content>
+          <Tabs.Content value="proxies">
+            <ProxySettings settings={settings} onSaved={onSaved} />
+          </Tabs.Content>
+          <Tabs.Content value="listings" className="settings-tab-content">
+            <ListingSourceSettings />
+          </Tabs.Content>
+          <Tabs.Content value="general">
+            <form onSubmit={save} className="form-stack">
               <label>
-                {t('tigerPort')}
-                <Input
-                  type="number"
-                  required
-                  min="1"
-                  max="65535"
-                  value={draft.tigerPort}
-                  onChange={(event) => setDraft({ ...draft, tigerPort: Number(event.target.value) })}
+                {t('language')}
+                <Select
+                  aria-label={t('language')}
+                  value={draft.language}
+                  onValueChange={(value) => setDraft({ ...draft, language: languageSchema.parse(value) })}
+                  options={[{ value: 'en', label: 'English' }, { value: 'ru', label: 'Русский' }]}
                 />
               </label>
-              <label>
-                {t('tigerGroup')}
-                <select
-                  className="input"
-                  value={draft.tigerLinkGroup}
-                  onChange={(event) => setDraft({ ...draft, tigerLinkGroup: event.target.value })}
-                >
-                  {[
-                    ...Array.from({ length: 26 }, (_, index) => String.fromCharCode(65 + index)),
-                    ...Array.from({ length: 19 }, (_, index) => String(index)),
-                  ].map((group) => (
-                    <option key={group} value={group}>
-                      {group}
-                    </option>
-                  ))}
-                </select>
+              <label className="checkbox-row">
+                <Checkbox
+                  checked={draft.bannersEnabled}
+                  onChange={(event) => setDraft({ ...draft, bannersEnabled: event.target.checked })}
+                />
+                {t('bannersEnabled')}
               </label>
-            </div>
-            <label>
-              {t('monitor')}
-              <select
-                className="input"
-                value={draft.monitorId}
-                onChange={(event) => setDraft({ ...draft, monitorId: event.target.value })}
-              >
-                <option value="">{t('primaryMonitor')}</option>
-                {monitors.map((monitor) => (
-                  <option value={monitor.id} key={monitor.id}>
-                    {monitor.name || monitor.id}
-                    {monitor.primary ? ` · ${t('primary')}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {message && (
-              <div className={message.includes('failed') ? 'inline-error' : 'muted'}>
-                {localizeDiagnostic(message)}
+              <div className="form-grid">
+                <label>
+                  {t('tigerPort')}
+                  <Input
+                    type="number"
+                    required
+                    min="1"
+                    max="65535"
+                    value={draft.tigerPort}
+                    onChange={(event) => setDraft({ ...draft, tigerPort: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  {t('tigerGroup')}
+                  <Select
+                    aria-label={t('tigerGroup')}
+                    value={draft.tigerLinkGroup}
+                    onValueChange={(value) => setDraft({ ...draft, tigerLinkGroup: value })}
+                    options={[
+                      ...Array.from({ length: 26 }, (_, index) => String.fromCharCode(65 + index)),
+                      ...Array.from({ length: 19 }, (_, index) => String(index)),
+                    ].map((group) => ({ value: group, label: group }))}
+                  />
+                </label>
               </div>
-            )}
-            <div className="dialog-actions">
-              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-                {t('cancel')}
-              </Button>
-              <Button type="submit" variant="primary" disabled={saving}>
-                {saving ? t('saving') : t('saveSettings')}
-              </Button>
-            </div>
-          </form>
-        </Tabs.Content>
+              <label>
+                {t('monitor')}
+                <Select
+                  aria-label={t('monitor')}
+                  value={draft.monitorId}
+                  onValueChange={(value) => setDraft({ ...draft, monitorId: value })}
+                  options={[
+                    { value: '', label: t('primaryMonitor') },
+                    ...monitors.map((monitor) => ({
+                      value: monitor.id,
+                      label: `${monitor.name || monitor.id}${monitor.primary ? ` · ${t('primary')}` : ''}`,
+                    })),
+                  ]}
+                />
+              </label>
+              {message && (
+                <div className={message.includes('failed') ? 'inline-error' : 'muted'}>
+                  {localizeDiagnostic(message)}
+                </div>
+              )}
+              <div className="dialog-actions">
+                <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+                  {t('cancel')}
+                </Button>
+                <Button type="submit" variant="primary" disabled={saving}>
+                  {saving ? t('saving') : t('saveSettings')}
+                </Button>
+              </div>
+            </form>
+          </Tabs.Content>
+        </ScrollArea>
       </Tabs.Root>
     </>
   )

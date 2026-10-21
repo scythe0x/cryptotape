@@ -156,3 +156,130 @@ func TestTigerPriorityUsesEchoedRequestAndSymbolRejection(t *testing.T) {
 		t.Fatalf("Tiger priority: %v", exchanges)
 	}
 }
+
+func TestTerminalRoutingUsesCurrentRuleForEveryAlertKind(t *testing.T) {
+	for _, kind := range []core.RuleKind{core.PriceMove, core.Listing} {
+		t.Run(string(kind), func(t *testing.T) {
+			c, _ := testController(t, func(string, any) {})
+			requests := make(chan string, 10)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests <- r.URL.Path
+				fmt.Fprint(w, `{"status":"ok"}`)
+			}))
+			defer server.Close()
+			c.terminal.baseURL = server.URL
+			rule := lifecycleRule()
+			rule.Kind, rule.ListingTypes = kind, []string{"spot"}
+			rule.Terminals, rule.OpenExchanges = []string{"vataga"}, []string{"binance"}
+			rule, err := c.SaveRule(rule)
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate := core.Candidate{Rule: rule, Symbol: "BTCUSDT"}
+			if kind == core.Listing {
+				candidate.Listing = &core.ListingDetails{Asset: "BTC", Exchange: "mexc", MarketType: "spot"}
+			}
+			alert, err := c.store.InsertAlert(candidate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rule.OpenExchanges = []string{"okx"}
+			if _, err := c.SaveRule(rule); err != nil {
+				t.Fatal(err)
+			}
+			c.enqueueAutomatic(alert, time.Now().Add(time.Second))
+			c.actionWG.Wait()
+			if result := c.OpenTerminals(alert.ID, "FAKEUSDT", []string{"vataga"}); result.Opened != 1 || result.Error != "" {
+				t.Fatalf("manual result: %+v", result)
+			}
+			for range 2 {
+				if path := <-requests; path != "/api/open/zenica/okx/F/BTC-USDT-SWAP" {
+					t.Fatalf("old exchange used: %s", path)
+				}
+			}
+			rule.OpenExchanges = []string{}
+			if _, err := c.SaveRule(rule); err != nil {
+				t.Fatal(err)
+			}
+			c.enqueueAutomatic(alert, time.Now().Add(time.Second))
+			c.actionWG.Wait()
+			if result := c.OpenTerminals(alert.ID, alert.Symbol, []string{"vataga"}); result.Opened != 0 || result.Error != "no enabled exchanges" {
+				t.Fatalf("all-disabled result: %+v", result)
+			}
+			if len(requests) != 0 {
+				t.Fatal("disabled exchange was opened")
+			}
+			if err := c.DeleteRule(rule.ID); err != nil {
+				t.Fatal(err)
+			}
+			if result := c.OpenTerminals(alert.ID, alert.Symbol, []string{"vataga"}); result.Opened != 1 || result.Error != "" {
+				t.Fatalf("deleted rule snapshot: %+v", result)
+			}
+			if path := <-requests; path != "/api/open/zenica/binance/F/BTCUSDT" {
+				t.Fatalf("snapshot not used: %s", path)
+			}
+		})
+	}
+}
+
+func TestEmptyExchangePriorityNeverFallsBack(t *testing.T) {
+	c := &Controller{}
+	if err := c.openInTerminal(context.Background(), "BTCUSDT", "vataga"); err == nil || err.Error() != "no enabled exchanges" {
+		t.Fatalf("missing explicit disabled exchange error: %v", err)
+	}
+}
+
+func TestQueuedAutomaticTerminalRechecksDisabledExchanges(t *testing.T) {
+	c, _ := testController(t, func(string, any) {})
+	started := make(chan struct{}, 33)
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		started <- struct{}{}
+		<-release
+		fmt.Fprint(w, `{"status":"ok"}`)
+	}))
+	defer server.Close()
+	defer close(release)
+	c.terminal.baseURL = server.URL
+	rule := lifecycleRule()
+	rule.Terminals, rule.OpenExchanges = []string{"vataga"}, []string{"binance"}
+	rule, err := c.SaveRule(rule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := make([]core.Candidate, 33)
+	for i := range candidates {
+		candidates[i] = core.Candidate{Rule: rule, Symbol: "BTCUSDT"}
+	}
+	alerts, err := c.store.InsertAlerts(context.Background(), candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, alert := range alerts[:32] {
+		c.enqueueAutomatic(alert, time.Now().Add(10*time.Second))
+	}
+	for range 32 {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("terminal workers did not fill")
+		}
+	}
+	c.enqueueAutomatic(alerts[32], time.Now().Add(10*time.Second))
+	rule.OpenExchanges = []string{}
+	if _, err := c.SaveRule(rule); err != nil {
+		t.Fatal(err)
+	}
+	// release requests without closing the channel before deferred cleanup.
+	for range 32 {
+		release <- struct{}{}
+	}
+	c.actionWG.Wait()
+	if len(started) != 0 {
+		t.Fatal("queued request opened an exchange disabled after enqueue")
+	}
+	saved, err := c.store.ListAlerts(context.Background(), 0, 1)
+	if err != nil || len(saved) != 1 || saved[0].TerminalStatus != "skipped" {
+		t.Fatalf("queued disabled result: %+v %v", saved, err)
+	}
+}

@@ -3,6 +3,7 @@ import { Play } from 'lucide-react'
 import { desktop } from '../api'
 import { useTranslation, soundLabel } from '../i18n'
 import { Button } from './ui'
+import { Select } from './Select'
 
 type Props = {
   sound: string
@@ -48,23 +49,19 @@ export function SoundField({ sound, volume, sounds, onChange, onVolume, onError 
     <div className="sound-field">
       <label htmlFor="rule-sound">{t('sound')}</label>
       <div className="input-row">
-        <select
+        <Select
           id="rule-sound"
-          className="input"
           value={sound}
           disabled={importing}
-          onChange={(event) => {
-            if (event.target.value === '__import') picker.current?.click()
-            else onChange(event.target.value)
+          onValueChange={(value) => {
+            if (value === '__import') picker.current?.click()
+            else onChange(value)
           }}
-        >
-          {[...new Set(['none', ...sounds, ...imported])].map((id) => (
-            <option key={id} value={id}>
-              {soundLabel(id)}
-            </option>
-          ))}
-          <option value="__import">{t('importSound')}</option>
-        </select>
+          options={[
+            ...[...new Set(['none', ...sounds, ...imported])].map((id) => ({ value: id, label: soundLabel(id) })),
+            { value: '__import', label: t('importSound') },
+          ]}
+        />
         <Button
           type="button"
           size="icon"

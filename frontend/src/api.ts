@@ -66,6 +66,12 @@ export const ruleSchema = z.object({
 
 export const languageSchema = z.enum(['en', 'ru'])
 
+export const tableColumnSchema = z.enum(['time', 'ticker', 'event', 'terminals'])
+export type TableColumnID = z.infer<typeof tableColumnSchema>
+export const defaultTableColumns: TableColumnID[] = ['time', 'ticker', 'event', 'terminals']
+export const tableColumnsSchema = z.array(tableColumnSchema)
+  .refine((columns) => new Set(columns).size === columns.length, 'duplicate table columns')
+
 export const proxyProtocolSchema = z.enum(['http', 'https', 'socks5'])
 export const proxySchema = z.object({
   id: z.string(),
@@ -79,6 +85,7 @@ export const proxySchema = z.object({
 export type ProxyProfile = z.infer<typeof proxySchema>
 
 export const settingsSchema = z.object({
+  tableColumns: tableColumnsSchema.default(defaultTableColumns),
   soundMuted: z.boolean().default(false),
   bannersEnabled: z.boolean().default(true),
   language: languageSchema,
@@ -222,6 +229,7 @@ export const desktop = {
   deleteRule: (id: number) => command('DeleteRule', id),
   setSoundMuted: (muted: boolean) => command('SetSoundMuted', muted),
   saveSettings: (settings: Settings) => command('SaveSettings', settings),
+  setTableColumns: (columns: TableColumnID[]) => command('SetTableColumns', tableColumnsSchema.parse(columns)),
   saveProxy: (profile: ProxyProfile, use: boolean) => command('SaveProxy', profile, use),
   selectProxy: (id: string) => command('SelectProxy', id),
   deleteProxy: (id: string) => command('DeleteProxy', id),
@@ -248,6 +256,7 @@ export const desktop = {
   previewSound: (id: string, volume: number) => command('PreviewSound', id, volume),
   monitors: () => invoke('Monitors', z.array(monitorSchema)),
   hideOverlay: (afterId: number) => command('HideOverlay', afterId),
+  resizeOverlay: (height: number, afterId: number) => command('ResizeOverlay', height, afterId),
 }
 
 export function listen<T>(

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { applyLanguage } from './i18n'
-import type { Alert, Rule, Snapshot } from './api'
+import type { Alert, Rule, Snapshot, TableColumnID } from './api'
 import { Overlay } from './Overlay'
 import { RuleDialog } from './components/RuleDialog'
 import { RulesSettings } from './components/RulesSettings'
@@ -68,6 +68,7 @@ const initialSnapshot = (): Snapshot => ({
   rules: [rule],
   alerts: [alert],
   settings: {
+    tableColumns: ['time', 'ticker', 'event', 'terminals'],
     language: 'en',
     proxies: [],
     activeProxyId: '',
@@ -94,6 +95,7 @@ const initialSnapshot = (): Snapshot => ({
 
 beforeEach(() => {
   applyLanguage('en')
+  Element.prototype.scrollIntoView = vi.fn()
   backend.call.mockReset()
   backend.openURL.mockClear()
   backend.listeners.clear()
@@ -124,6 +126,11 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
+
+async function chooseOption(trigger: HTMLElement, label: string) {
+  fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+  await userEvent.click(await screen.findByRole('option', { name: label }))
+}
 
 it('dismisses a notification after a successful manual open', async () => {
   render(<Overlay />)
@@ -179,6 +186,7 @@ it('explains the automatic cooldown beside the rule window', async () => {
 it('saves the language preference in settings', async () => {
   const { SettingsDialog } = await import('./components/SettingsDialog')
   const settings = {
+    tableColumns: ['time', 'ticker', 'event', 'terminals'] satisfies TableColumnID[],
     language: 'en' as const,
     proxies: [],
     activeProxyId: '',
@@ -203,7 +211,7 @@ it('saves the language preference in settings', async () => {
   )
   await userEvent.click(screen.getByRole('tab', { name: 'general' }))
   expect(screen.queryByRole('spinbutton', { name: /cooldown/i })).toBeNull()
-  await userEvent.selectOptions(screen.getByLabelText('language'), 'ru')
+  await chooseOption(screen.getByLabelText('language'), 'Русский')
   expect(screen.getByRole('button', { name: 'save settings' })).toBeTruthy()
   await userEvent.click(screen.getByRole('button', { name: 'save settings' }))
   await waitFor(() =>
@@ -224,7 +232,7 @@ it('switches the overlay language live without losing its cards', async () => {
     })
   })
   expect(screen.getByRole('button', { name: 'открыть BTCUSDT в терминале' })).toBeTruthy()
-  expect(screen.getByText('knife')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'открыть BTCUSDT в терминале' }).textContent).toContain('-3.00%')
   expect(document.documentElement.lang).toBe('ru')
   await act(async () => {
     backend.listeners.get('settings:changed')?.({
@@ -239,7 +247,7 @@ it('renders the Russian editor without changing stored alert values', async () =
   render(<RuleDialog open onOpenChange={vi.fn()} rule={rule} sounds={['chime']} onSaved={vi.fn()} />)
   expect(screen.getByRole('heading', { name: 'настройка алерта' })).toBeTruthy()
   expect(screen.getByLabelText('название').getAttribute('value')).toBe('knife')
-  expect(screen.getByRole('option', { name: 'chime' }).getAttribute('value')).toBe('chime')
+  expect(screen.getByRole('combobox', { name: 'звук' }).textContent).toBe('chime')
   expect(screen.getByRole('button', { name: 'автооткрытие в Vataga' })).toBeTruthy()
   await userEvent.click(screen.getByRole('button', { name: 'сохранить' }))
   await waitFor(() => expect(backend.call).toHaveBeenCalledWith('main.DesktopService.SaveRule', rule))
@@ -261,7 +269,7 @@ it('places the new alert button below all rule cards', () => {
 it('saves silent notifications without exposing volume or playback controls', async () => {
   const user = userEvent.setup()
   render(<RuleDialog open onOpenChange={() => {}} rule={rule} sounds={['chime']} onSaved={() => {}} />)
-  await user.selectOptions(screen.getByLabelText('sound'), 'none')
+  await chooseOption(screen.getByLabelText('sound'), 'no sound')
   expect(screen.queryByRole('slider', { name: 'sound volume' })).toBeNull()
   expect(screen.getByRole('button', { name: 'preview sound' }).hasAttribute('disabled')).toBe(true)
   await user.click(screen.getByRole('button', { name: 'save alert' }))
@@ -297,7 +305,7 @@ it('creates a new rule through the full settings form', async () => {
   await user.type(screen.getByLabelText('movement, %'), '10')
   await user.clear(screen.getByLabelText('window, seconds'))
   await user.type(screen.getByLabelText('window, seconds'), '300')
-  await user.selectOptions(screen.getByLabelText('sound'), 'alarm')
+  await chooseOption(screen.getByLabelText('sound'), 'alarm')
   await user.click(screen.getByRole('button', { name: 'auto-open in Vataga' }))
   await user.click(screen.getByRole('button', { name: 'save alert' }))
   await waitFor(() => expect(saved).toHaveBeenCalledOnce())
@@ -305,7 +313,7 @@ it('creates a new rule through the full settings form', async () => {
     id: 0,
     kind: 'price_move', listingExchanges: [], listingTypes: [],
     bannerSeconds: 15,
-    openExchanges: [],
+    openExchanges: ['binance', 'bybit', 'okx', 'gate'],
     name: 'fast knife',
     percent: 10,
     windowSeconds: 300,
@@ -536,7 +544,7 @@ it('acknowledges the overlay browser frame separately from feed rendering', asyn
 
 it('creates an external listing rule without price or turnover conditions', async () => {
   render(<RuleDialog open onOpenChange={vi.fn()} rule={null} sounds={['chime']} onSaved={vi.fn()} />)
-  await userEvent.selectOptions(screen.getByLabelText('alert type'), 'listing')
+  await chooseOption(screen.getByLabelText('alert type'), 'listing')
   await userEvent.clear(screen.getByLabelText('name'))
   await userEvent.type(screen.getByLabelText('name'), 'external listings')
   expect(screen.queryByLabelText('movement, %')).toBeNull()
@@ -561,7 +569,7 @@ it('uses the alert type as the default name without overwriting custom names', a
   const name = screen.getByLabelText('название')
   const type = screen.getByLabelText('тип алерта')
   expect(name).toHaveProperty('value', 'движение цены')
-  await userEvent.selectOptions(type, 'listing')
+  await chooseOption(type, 'листинг')
   expect(name).toHaveProperty('value', 'листинг')
   expect(screen.getByRole('group', { name: 'типы событий' })).toBeTruthy()
   for (const event of ['Листинг на споте', 'Листинг на фьючерсах', 'Анонс листинга', 'Открытие премаркета', 'Скорый листинг на споте', 'Добавление в каталог']) {
@@ -571,13 +579,13 @@ it('uses the alert type as the default name without overwriting custom names', a
   await waitFor(() => expect(backend.call).toHaveBeenCalledWith('main.DesktopService.SaveRule', expect.objectContaining({ kind: 'listing', name: 'листинг' })))
   await userEvent.clear(name)
   await userEvent.type(name, 'только Upbit')
-  await userEvent.selectOptions(type, 'price_move')
+  await chooseOption(type, 'движение цены')
   expect(name).toHaveProperty('value', 'только Upbit')
 })
 
 it('lets a listing rule exclude an exchange and restore all exchanges', async () => {
   render(<RuleDialog open onOpenChange={vi.fn()} rule={null} sounds={['chime']} onSaved={vi.fn()} />)
-  await userEvent.selectOptions(screen.getByLabelText('alert type'), 'listing')
+  await chooseOption(screen.getByLabelText('alert type'), 'listing')
   await userEvent.clear(screen.getByLabelText('name'))
   await userEvent.type(screen.getByLabelText('name'), 'external listings')
   await userEvent.click(screen.getByRole('checkbox', { name: 'Upbit' }))
@@ -610,7 +618,7 @@ it('renders external listings with the source exchange instead of a fake percent
     if (name.endsWith('.SessionAlerts')) return [listing]
   })
   render(<Overlay />)
-  expect(await screen.findByText('Upbit')).toBeTruthy()
+  expect(await screen.findByText(/Spot listing Upbit/)).toBeTruthy()
   expect(screen.getByText(/Spot listing/)).toBeTruthy()
   expect(screen.queryByText('0.00%')).toBeNull()
   expect(screen.queryByRole('button', { name: 'open listing announcement' })).toBeNull()
@@ -625,7 +633,8 @@ it('configures the listing source without reading a saved key into the form', as
     if (name.endsWith('.ListingSource')) return source
   })
   render(<ListingSourceSettings />)
-  await screen.findByPlaceholderText('key saved')
+  await screen.findByText('key saved')
+  expect(screen.getByPlaceholderText('********')).toBeTruthy()
   expect(screen.queryByRole('combobox')).toBeNull()
   expect(screen.queryByText(/feed_free/)).toBeNull()
   const bot = screen.getByRole('link', { name: '@NLF_websocket_bot' })
@@ -665,7 +674,7 @@ it('saves banner visibility independently of sound in general settings', async (
   backend.call.mockResolvedValue([])
   render(<SettingsDialog open onOpenChange={vi.fn()} settings={settings} rules={[]} sounds={[]} onSaved={vi.fn()} />)
   await userEvent.click(screen.getByRole('tab', { name: 'general' }))
-  const checkbox = screen.getByRole('checkbox', { name: 'corner notification banners' })
+  const checkbox = screen.getByRole('checkbox', { name: 'show notifications in the corner of the screen' })
   expect(checkbox.matches(':checked')).toBe(true)
   await userEvent.click(checkbox)
   await userEvent.click(screen.getByRole('button', { name: 'save settings' }))
@@ -807,12 +816,13 @@ it('preserves the color of an existing alert', () => {
 })
 
 it('reorders opening exchanges without changing their selection on click', async () => {
-  render(<RuleDialog open onOpenChange={vi.fn()} rule={{ ...rule, kind: 'listing', listingTypes: ['spot'], listingExchanges: ['upbit'] }} sounds={['chime']} onSaved={vi.fn()} />)
-  const bybit = screen.getByRole('button', { name: /Bybit, priority 2/ })
+  const { container } = render(<RuleDialog open onOpenChange={vi.fn()} rule={{ ...rule, openExchanges: ['binance', 'bybit', 'okx', 'gate'], kind: 'listing', listingTypes: ['spot'], listingExchanges: ['upbit'] }} sounds={['chime']} onSaved={vi.fn()} />)
+  const bybit = screen.getByRole('button', { name: 'Bybit' })
+  const activeOrder = () => [...(container.ownerDocument.querySelectorAll('.active-items-active button'))].map((button) => button.getAttribute('aria-label'))
   await userEvent.click(bybit)
-  expect(screen.getByRole('button', { name: /Bybit, priority 2/ })).toBeTruthy()
+  expect(activeOrder()).toEqual(['Binance', 'Bybit', 'OKX', 'Gate'])
   fireEvent.keyDown(bybit, { key: 'ArrowLeft' })
-  expect(screen.getByRole('button', { name: /Bybit, priority 1/ })).toBeTruthy()
+  expect(activeOrder()).toEqual(['Bybit', 'Binance', 'OKX', 'Gate'])
   await userEvent.click(screen.getByRole('button', { name: 'save alert' }))
   await waitFor(() => expect(backend.call).toHaveBeenCalledWith('main.DesktopService.SaveRule', expect.objectContaining({ openExchanges: ['bybit', 'binance', 'okx', 'gate'] })))
 })
@@ -838,9 +848,59 @@ it('uses the listing source icon and event in the banner title without time or l
   })
   const { container } = render(<Overlay />)
   await screen.findByText(/Анонс листинга/)
-  expect(container.querySelector('.toast-symbol')?.textContent).toBe('REZUSDT – Анонс листинга')
+  expect(container.querySelector('.toast-symbol')?.textContent).toBe('REZUSDT — Анонс листинга Upbit')
   expect(screen.getByRole('img', { name: 'Upbit' })).toBeTruthy()
   expect(screen.queryByRole('img', { name: 'Binance' })).toBeNull()
   expect(container.querySelector('time')).toBeNull()
   expect(container.querySelector('.listing-link')).toBeNull()
+})
+
+it('sizes the native window from its rendered stack and updates the alert guard at the same height', async () => {
+  const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => window.setTimeout(() => callback(performance.now()), 0))
+  const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => window.clearTimeout(id))
+  const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(52)
+  try {
+    render(<Overlay />)
+    await waitFor(() => expect(backend.call).toHaveBeenCalledWith('main.DesktopService.ResizeOverlay', 52, alert.id))
+    await act(async () => {
+      backend.listeners.get('alert:new')?.({ data: { ...alert, id: 2, symbol: 'ETHUSDT' } })
+    })
+    await waitFor(() => expect(backend.call).toHaveBeenCalledWith('main.DesktopService.ResizeOverlay', 52, 2))
+  } finally {
+    height.mockRestore()
+    requestFrame.mockRestore()
+    cancelFrame.mockRestore()
+  }
+})
+
+it('remeasures content changes without polling and retains the rule color without its badge', async () => {
+  let notifyResize = () => {}
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: () => void) { notifyResize = callback }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  })
+  let measuredHeight = 52
+  const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => window.setTimeout(() => callback(performance.now()), 0))
+  const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => window.clearTimeout(id))
+  const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => measuredHeight)
+  try {
+    const { container } = render(<Overlay />)
+    await waitFor(() => expect(backend.call).toHaveBeenCalledWith('main.DesktopService.ResizeOverlay', 52, alert.id))
+    expect(container.querySelector('.toast')?.getAttribute('style')).toContain('--alert-color: #41c977')
+    expect(container.querySelector('.alert-badge')).toBeNull()
+    backend.call.mockClear()
+    measuredHeight = 78
+    act(() => notifyResize())
+    await waitFor(() => expect(backend.call).toHaveBeenCalledWith('main.DesktopService.ResizeOverlay', 78, alert.id))
+    backend.call.mockClear()
+    act(() => notifyResize())
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    expect(backend.call).not.toHaveBeenCalled()
+  } finally {
+    height.mockRestore()
+    requestFrame.mockRestore()
+    cancelFrame.mockRestore()
+  }
 })
