@@ -12,19 +12,29 @@ import (
 
 	"cryptotape/internal/binance"
 	"cryptotape/internal/core"
+	"cryptotape/internal/listings"
 	"cryptotape/internal/storage"
 )
 
 type EventSink func(name string, data any)
 
 type Controller struct {
-	store    *storage.Store
-	engine   *core.Engine
-	audio    *Audio
-	terminal *Terminal
-	tiger    *Tiger
-	feed     *binance.Feed
-	emit     EventSink
+	listingMu          sync.Mutex
+	listingRestartMu   sync.Mutex
+	listingConfig      listings.Config
+	listingConfigError bool
+	listingConfigPath  string
+	listingHealth      core.ListingHealth
+	listingCatalog     listings.Catalog
+	listingCancel      context.CancelFunc
+	listingDone        chan struct{}
+	store              *storage.Store
+	engine             *core.Engine
+	audio              *Audio
+	terminal           *Terminal
+	tiger              *Tiger
+	feed               *binance.Feed
+	emit               EventSink
 
 	healthMu          sync.Mutex
 	settingsMu        sync.Mutex
@@ -32,6 +42,7 @@ type Controller struct {
 	rules             []core.Rule
 	settings          core.Settings
 	health            core.Health
+	pingSamples       []int64
 	cancel            context.CancelFunc
 	stop              context.CancelFunc
 	root              context.Context
@@ -86,15 +97,24 @@ func NewController(path string, emit EventSink) (*Controller, error) {
 		store.Close()
 		return nil, err
 	}
+	audio.SetMuted(settings.SoundMuted)
 	latest, err := store.ListAlerts(context.Background(), 0, 1)
 	if err != nil {
 		store.Close()
 		return nil, err
 	}
 	controller := &Controller{
-		store: store, engine: core.NewEngine(rules, settings), audio: audio,
+		store: store, engine: core.NewEngine(rules), audio: audio,
 		terminal: NewTerminal(), tiger: NewTiger(), emit: emit, rules: rules, settings: settings,
 		health: core.Health{State: "starting", Detail: "initializing"},
+	}
+	controller.listingConfigPath = filepath.Join(filepath.Dir(path), "listings-source.json")
+	controller.listingHealth.State = "disabled"
+	controller.listingConfig, err = listings.LoadConfig(controller.listingConfigPath)
+	if err != nil {
+		controller.listingConfig = listings.Config{Endpoint: listings.FreeEndpoint}
+		controller.listingConfigError = true
+		controller.listingHealth.State, controller.listingHealth.Code = "error", "INVALID_CONFIG"
 	}
 	if len(latest) > 0 {
 		controller.launchID = latest[0].ID
@@ -115,6 +135,7 @@ func (c *Controller) Start(ctx context.Context) {
 		}
 	}()
 	c.restartFeed()
+	c.restartListings()
 }
 
 func (c *Controller) Close() error {
@@ -132,6 +153,7 @@ func (c *Controller) close() error {
 	}
 	c.mu.Unlock()
 	c.feedWG.Wait()
+	c.stopListings()
 	c.pipelineMu.Lock()
 	c.closing = true
 	close(c.candidates)
@@ -185,14 +207,17 @@ func (c *Controller) reloadRules() error {
 		return err
 	}
 	c.mu.Lock()
+	listingWasEnabled := slices.ContainsFunc(c.rules, func(rule core.Rule) bool { return rule.IsListing() })
 	c.rules = rules
-	settings := c.settings
 	feed := c.feed
 	c.mu.Unlock()
-	c.engine.Configure(rules, settings)
+	c.engine.Configure(rules)
 	c.emit("rules:changed", rules)
 	if feed != nil {
 		feed.SetMinimumVolume(core.MinimumVolume(rules))
+	}
+	if listingWasEnabled != slices.ContainsFunc(rules, func(rule core.Rule) bool { return rule.IsListing() }) {
+		c.restartListings()
 	}
 	return nil
 }
@@ -239,19 +264,24 @@ func (c *Controller) onQuote(quote core.Quote) {
 		return
 	}
 	for _, candidate := range c.engine.Process(quote) {
-		job := queuedCandidate{candidate: candidate, id: c.sequence.Add(1), queued: time.Now()}
-		c.actionWG.Add(1)
-		c.queueMu.Lock()
-		c.pending[job.id] = job.queued
-		select {
-		case c.candidates <- job:
-		default:
-			delete(c.pending, job.id)
-			c.queueHealth.Unsaved++
-			c.queueHealth.Error = "alert storage queue overflow"
-			c.pipelineError = errors.New(c.queueHealth.Error)
-			c.actionWG.Done()
-		}
-		c.queueMu.Unlock()
+		c.enqueueCandidate(candidate)
 	}
+}
+
+// the caller holds pipelineMu while admitting work.
+func (c *Controller) enqueueCandidate(candidate core.Candidate) {
+	job := queuedCandidate{candidate: candidate, id: c.sequence.Add(1), queued: time.Now()}
+	c.actionWG.Add(1)
+	c.queueMu.Lock()
+	c.pending[job.id] = job.queued
+	select {
+	case c.candidates <- job:
+	default:
+		delete(c.pending, job.id)
+		c.queueHealth.Unsaved++
+		c.queueHealth.Error = "alert storage queue overflow"
+		c.pipelineError = errors.New(c.queueHealth.Error)
+		c.actionWG.Done()
+	}
+	c.queueMu.Unlock()
 }

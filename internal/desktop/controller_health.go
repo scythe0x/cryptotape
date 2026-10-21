@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"slices"
 	"time"
 
 	"cryptotape/internal/core"
@@ -26,6 +27,7 @@ func (c *Controller) setFeedHealth(version uint64, health core.Health) {
 		health.PingMs = c.health.PingMs
 	} else {
 		health.PingMs = nil
+		c.pingSamples = nil
 	}
 	health.Storage = c.pipelineHealth()
 	health.Timings = c.recentTimings()
@@ -49,7 +51,17 @@ func (c *Controller) reportPing(version uint64, elapsed time.Duration) {
 		c.mu.Unlock()
 		return
 	}
-	ms := elapsed.Milliseconds()
+	c.pingSamples = append(c.pingSamples, elapsed.Milliseconds())
+	if len(c.pingSamples) > 5 {
+		c.pingSamples = c.pingSamples[1:]
+	}
+	sorted := slices.Clone(c.pingSamples)
+	slices.Sort(sorted)
+	middle := len(sorted) / 2
+	ms := sorted[middle]
+	if len(sorted)%2 == 0 {
+		ms = sorted[middle-1] + (ms-sorted[middle-1])/2
+	}
 	c.health.PingMs = &ms
 	c.health.UpdatedAtMs = time.Now().UnixMilli()
 	health := c.health

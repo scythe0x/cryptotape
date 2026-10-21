@@ -16,7 +16,7 @@ func TestWindowsUseExchangeTimeDespiteDeliveryJitter(t *testing.T) {
 		{"late crossing cannot lengthen movement", quote("BTCUSDT", 100, base), quote("BTCUSDT", 89, base.Add(time.Second)), 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			engine := NewEngine([]Rule{{ID: 1, Percent: 10, WindowSeconds: 5}}, DefaultSettings())
+			engine := NewEngine([]Rule{{ID: 1, Percent: 10, WindowSeconds: 5}})
 			test.first.Received = base
 			test.second.Received = base.Add(7 * time.Second)
 			if test.want == 0 {
@@ -31,7 +31,7 @@ func TestWindowsUseExchangeTimeDespiteDeliveryJitter(t *testing.T) {
 }
 
 func TestUpdateOrderAndEqualEventTimestamps(t *testing.T) {
-	engine := NewEngine([]Rule{{ID: 1, Percent: 5, WindowSeconds: 300}}, DefaultSettings())
+	engine := NewEngine([]Rule{{ID: 1, Percent: 5, WindowSeconds: 300}})
 	at := time.Unix(1800000000, 0)
 	first := quote("BTCUSDT", 100, at)
 	first.UpdateID = 100
@@ -51,7 +51,7 @@ func TestUpdateOrderAndEqualEventTimestamps(t *testing.T) {
 }
 
 func TestClockCorrectionDoesNotReindexWindows(t *testing.T) {
-	engine := NewEngine([]Rule{{ID: 1, Percent: 10, WindowSeconds: 5}}, DefaultSettings())
+	engine := NewEngine([]Rule{{ID: 1, Percent: 10, WindowSeconds: 5}})
 	local := time.Unix(1800000000, 0)
 	first := quote("BTCUSDT", 100, local.Add(time.Hour))
 	first.Received, first.ClockOffset = local, time.Hour

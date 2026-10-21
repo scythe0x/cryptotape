@@ -19,7 +19,7 @@ func TestMarketCrashPersistsEveryCrossing(t *testing.T) {
 		{ID: 1, Name: "soft", Percent: 3, WindowSeconds: 60, MinQuoteVolume: 80_000_000},
 		{ID: 2, Name: "strong", Percent: 10, WindowSeconds: 300, MinQuoteVolume: 80_000_000},
 	}
-	engine := core.NewEngine(rules, core.DefaultSettings())
+	engine := core.NewEngine(rules)
 	volumes := make(map[string]float64, markets)
 	symbols := make([]string, markets)
 	for index := range symbols {

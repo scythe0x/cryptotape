@@ -27,11 +27,12 @@ const (
 )
 
 type Callbacks struct {
-	Quote  func(core.Quote)
-	Volume func(map[string]float64)
-	Gap    func([]string)
-	Health func(core.Health)
-	Ping   func(time.Duration)
+	Symbols func([]string)
+	Quote   func(core.Quote)
+	Volume  func(map[string]float64)
+	Gap     func([]string)
+	Health  func(core.Health)
+	Ping    func(time.Duration)
 }
 
 type Feed struct {
@@ -116,6 +117,9 @@ func (f *Feed) Run(ctx context.Context) error {
 	symbols, err := f.loadSymbols(ctx)
 	if err != nil {
 		return err
+	}
+	if f.cb.Symbols != nil {
+		f.cb.Symbols(symbols)
 	}
 	volumes, err := f.loadVolumes(ctx)
 	if err != nil {

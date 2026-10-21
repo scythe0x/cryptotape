@@ -36,6 +36,6 @@ tasks:
 
   check:
     cmds:
-      - go test ./internal/... .
-      - go vet ./internal/... .
+      - go test ./internal/... ./cmd/... .
+      - go vet ./internal/... ./cmd/... .
       - cd frontend && npm run lint && npm test && npm run build

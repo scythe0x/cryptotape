@@ -22,7 +22,7 @@ func warm(t *testing.T, engine *Engine, symbol string, start time.Time, window t
 
 func TestKnifeFirstCrossingAndRebound(t *testing.T) {
 	rule := Rule{ID: 1, Name: "knife", Percent: 5, WindowSeconds: 60, MinQuoteVolume: 80_000_000}
-	engine := NewEngine([]Rule{rule}, DefaultSettings())
+	engine := NewEngine([]Rule{rule})
 	engine.SetVolumes(map[string]float64{"BTCUSDT": 100_000_000})
 	base := warm(t, engine, "BTCUSDT", time.Unix(1_800_000_000, 0), time.Minute)
 
@@ -48,7 +48,7 @@ func TestRulesAreIndependent(t *testing.T) {
 		{ID: 1, Percent: 3, WindowSeconds: 60, MinQuoteVolume: 80_000_000},
 		{ID: 2, Percent: 10, WindowSeconds: 60, MinQuoteVolume: 80_000_000},
 	}
-	engine := NewEngine(rules, DefaultSettings())
+	engine := NewEngine(rules)
 	engine.SetVolumes(map[string]float64{"BTCUSDT": 100_000_000})
 	base := warm(t, engine, "BTCUSDT", time.Unix(1_800_000_000, 0), time.Minute)
 	first := engine.Process(quote("BTCUSDT", 96, base.Add(time.Second)))
@@ -68,7 +68,7 @@ func TestExactThresholdCrossing(t *testing.T) {
 	}{{90, "down"}, {110, "up"}} {
 		t.Run(test.direction, func(t *testing.T) {
 			rule := Rule{ID: 1, Percent: 10, WindowSeconds: 60, MinQuoteVolume: 80_000_000}
-			engine := NewEngine([]Rule{rule}, DefaultSettings())
+			engine := NewEngine([]Rule{rule})
 			engine.SetVolumes(map[string]float64{"BTCUSDT": 100_000_000})
 			base := warm(t, engine, "BTCUSDT", time.Unix(1_800_000_000, 0), time.Minute)
 			before := test.price + .000001
@@ -88,7 +88,7 @@ func TestExactThresholdCrossing(t *testing.T) {
 
 func TestGapRequiresFreshBaselineAndVolume(t *testing.T) {
 	rule := Rule{ID: 1, Percent: 5, WindowSeconds: 5, MinQuoteVolume: 80_000_000}
-	engine := NewEngine([]Rule{rule}, DefaultSettings())
+	engine := NewEngine([]Rule{rule})
 	base := time.Unix(1_800_000_000, 0)
 	for second := 0; second <= 5; second++ {
 		engine.Process(quote("BTCUSDT", 100, base.Add(time.Duration(second)*time.Second)))
@@ -119,7 +119,7 @@ func TestWindowBucketsStayBounded(t *testing.T) {
 
 func TestCooldownDoesNotEmitLateContinuation(t *testing.T) {
 	rule := Rule{ID: 1, Percent: 5, WindowSeconds: 60, MinQuoteVolume: 80_000_000}
-	engine := NewEngine([]Rule{rule}, DefaultSettings())
+	engine := NewEngine([]Rule{rule})
 	engine.SetVolumes(map[string]float64{"BTCUSDT": 100_000_000})
 	base := warm(t, engine, "BTCUSDT", time.Unix(1_800_000_000, 0), time.Minute)
 	if got := engine.Process(quote("BTCUSDT", 94, base.Add(time.Second))); len(got) != 1 {
@@ -138,7 +138,7 @@ func TestCooldownDoesNotEmitLateContinuation(t *testing.T) {
 
 func BenchmarkProcessLiquid60(b *testing.B) {
 	rule := Rule{ID: 1, Percent: 5, WindowSeconds: 300, MinQuoteVolume: 80_000_000}
-	engine := NewEngine([]Rule{rule}, DefaultSettings())
+	engine := NewEngine([]Rule{rule})
 	volumes := make(map[string]float64)
 	var symbols [60]string
 	for index := 0; index < 60; index++ {
@@ -160,7 +160,7 @@ func TestEachRuleHasIndependentTurnoverFilter(t *testing.T) {
 		{ID: 1, Percent: 3, WindowSeconds: 60, MinQuoteVolume: 80e6},
 		{ID: 2, Percent: 10, WindowSeconds: 60, MinQuoteVolume: 200e6},
 	}
-	engine := NewEngine(rules, DefaultSettings())
+	engine := NewEngine(rules)
 	engine.SetVolumes(map[string]float64{"BTCUSDT": 100e6})
 	base := warm(t, engine, "BTCUSDT", time.Unix(1_800_000_000, 0), time.Minute)
 	got := engine.Process(quote("BTCUSDT", 89, base.Add(time.Second)))
@@ -179,7 +179,7 @@ func TestEachRuleHasIndependentTurnoverFilter(t *testing.T) {
 func TestPartialWindowAlertsImmediately(t *testing.T) {
 	for _, duration := range []time.Duration{time.Second, 2 * time.Minute} {
 		t.Run(duration.String(), func(t *testing.T) {
-			engine := NewEngine([]Rule{{ID: 1, Percent: 10, WindowSeconds: 300}}, DefaultSettings())
+			engine := NewEngine([]Rule{{ID: 1, Percent: 10, WindowSeconds: 300}})
 			base := time.Unix(1_800_000_000, 0)
 			for elapsed := time.Duration(0); elapsed < duration; elapsed += time.Second {
 				if got := engine.Process(quote("BTCUSDT", 100, base.Add(elapsed))); len(got) != 0 {
@@ -200,7 +200,7 @@ func TestPartialWindowAlertsImmediately(t *testing.T) {
 func TestReconnectDiscardsPricesButPreservesCooldown(t *testing.T) {
 	for _, reset := range []string{"gap", "stream", "all"} {
 		t.Run(reset, func(t *testing.T) {
-			engine := NewEngine([]Rule{{ID: 1, Percent: 5, WindowSeconds: 300}}, DefaultSettings())
+			engine := NewEngine([]Rule{{ID: 1, Percent: 5, WindowSeconds: 300}})
 			base := time.Unix(1_800_000_000, 0)
 			engine.Process(quote("BTCUSDT", 100, base))
 			if got := engine.Process(quote("BTCUSDT", 94, base.Add(time.Second))); len(got) != 1 {
@@ -212,18 +212,26 @@ func TestReconnectDiscardsPricesButPreservesCooldown(t *testing.T) {
 			if reset == "all" {
 				engine.ResetAll()
 			}
-			if got := engine.Process(quote("BTCUSDT", 80, base.Add(20*time.Second))); len(got) != 0 {
+			if got := engine.Process(quote("BTCUSDT", 80, base.Add(70*time.Second))); len(got) != 0 {
 				t.Fatalf("movement across gap inferred: %+v", got)
 			}
-			if got := engine.Process(quote("BTCUSDT", 88, base.Add(21*time.Second))); len(got) != 0 {
+			if got := engine.Process(quote("BTCUSDT", 88, base.Add(71*time.Second))); len(got) != 0 {
 				t.Fatalf("reconnect bypassed cooldown: %+v", got)
+			}
+			for second := 72; second <= 300; second++ {
+				if got := engine.Process(quote("BTCUSDT", 80, base.Add(time.Duration(second)*time.Second))); len(got) != 0 {
+					t.Fatalf("cooldown after reconnect at %ds: %+v", second, got)
+				}
+			}
+			if got := engine.Process(quote("BTCUSDT", 88, base.Add(301*time.Second))); len(got) != 1 || got[0].Direction != "up" {
+				t.Fatalf("fresh crossing after reconnect and cooldown: %+v", got)
 			}
 		})
 	}
 }
 
 func TestPartialWindowExpiresOldExtrema(t *testing.T) {
-	engine := NewEngine([]Rule{{ID: 1, Percent: 10, WindowSeconds: 5}}, DefaultSettings())
+	engine := NewEngine([]Rule{{ID: 1, Percent: 10, WindowSeconds: 5}})
 	base := time.Unix(1_800_000_000, 0)
 	for second := 0; second <= 6; second++ {
 		engine.Process(quote("BTCUSDT", 100-float64(second), base.Add(time.Duration(second)*time.Second)))

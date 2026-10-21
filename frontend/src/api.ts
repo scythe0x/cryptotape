@@ -1,10 +1,58 @@
-import { Call, Events, Clipboard } from '@wailsio/runtime'
+import { Call, Events, Clipboard, Browser } from '@wailsio/runtime'
 import { z } from 'zod'
 
 export const terminalSchema = z.enum(['vataga', 'tiger'])
 export type TerminalID = z.infer<typeof terminalSchema>
 
+export const ruleKindSchema = z.enum(['price_move', 'listing'])
+export const listingSchema = z.object({
+  exchange: z.string(),
+  asset: z.string(),
+  marketType: z.string(),
+  markets: z
+    .array(z.string())
+    .nullable()
+    .transform((value) => value ?? []),
+  url: z.url({ protocol: /^https$/ }),
+  detectedTimeUs: z.number(),
+  sentTimeUs: z.number(),
+})
+
+export const listingHealthSchema = z.object({
+  state: z.string(),
+  code: z.string(),
+  plan: z.string(),
+  delayMs: z.number(),
+  received: z.number(),
+  rejected: z.number(),
+  unmatched: z.number(),
+  lastEventAtMs: z.number(),
+  providerWaitMs: z.number(),
+  deliveryMs: z.number(),
+})
+export const listingSourceSchema = z.object({
+  endpoint: z.string(),
+  keyConfigured: z.boolean(),
+  health: listingHealthSchema,
+})
+export type ListingHealth = z.infer<typeof listingHealthSchema>
+export type ListingSource = z.infer<typeof listingSourceSchema>
+
+export const bannerSecondsSchema = z.union([
+  z.literal(-1), z.literal(0), z.literal(5), z.literal(15),
+  z.literal(30), z.literal(60), z.literal(300),
+]).default(-1)
+
+export const openExchangeSchema = z.enum(['binance', 'bybit', 'okx', 'gate'])
+export type OpenExchange = z.infer<typeof openExchangeSchema>
+export const defaultOpenExchanges: OpenExchange[] = ['binance', 'bybit', 'okx', 'gate']
+
 export const ruleSchema = z.object({
+  openExchanges: z.array(openExchangeSchema).default(defaultOpenExchanges),
+  bannerSeconds: bannerSecondsSchema,
+  kind: ruleKindSchema.optional(),
+  listingExchanges: z.array(z.string()).optional(),
+  listingTypes: z.array(z.string()).optional(),
   id: z.number(),
   name: z.string(),
   percent: z.number(),
@@ -31,63 +79,89 @@ export const proxySchema = z.object({
 export type ProxyProfile = z.infer<typeof proxySchema>
 
 export const settingsSchema = z.object({
+  soundMuted: z.boolean().default(false),
+  bannersEnabled: z.boolean().default(true),
   language: languageSchema,
   proxies: z.array(proxySchema),
   activeProxyId: z.string(),
-  cooldownSeconds: z.number(),
   monitorId: z.string(),
   tigerPort: z.number(),
   tigerLinkGroup: z.string(),
 })
 
-export const alertSchema = z.object({
-  receivedAtMs: z.number().default(0),
-  detectedAtMs: z.number().default(0),
-  writeStartedAtMs: z.number().default(0),
-  id: z.number(),
-  ruleId: z.number(),
-  ruleName: z.string(),
-  symbol: z.string(),
-  direction: z.enum(['up', 'down']),
-  changePercent: z.number(),
-  price: z.number(),
-  spreadPercent: z.number(),
-  quoteVolume: z.number(),
-  eventTimeMs: z.number(),
-  createdAtMs: z.number(),
-  sound: z.string(),
-  color: z.string(),
-  volume: z.number(),
-  terminals: z.array(terminalSchema),
-  terminalStatus: z.string(),
-  terminalError: z.string(),
-})
+export const alertSchema = z
+  .object({
+    openExchanges: z.array(openExchangeSchema).default([]),
+    bannerSeconds: bannerSecondsSchema,
+    kind: ruleKindSchema.optional(),
+    listing: listingSchema.optional(),
+    receivedAtMs: z.number().default(0),
+    detectedAtMs: z.number().default(0),
+    writeStartedAtMs: z.number().default(0),
+    id: z.number(),
+    ruleId: z.number(),
+    ruleName: z.string(),
+    symbol: z.string(),
+    direction: z.enum(['up', 'down', '']),
+    changePercent: z.number(),
+    price: z.number(),
+    spreadPercent: z.number(),
+    quoteVolume: z.number(),
+    eventTimeMs: z.number(),
+    createdAtMs: z.number(),
+    sound: z.string(),
+    color: z.string(),
+    volume: z.number(),
+    terminals: z.array(terminalSchema),
+    terminalStatus: z.string(),
+    terminalError: z.string(),
+  })
+  .refine((alert) =>
+    alert.kind === 'listing'
+      ? alert.listing !== undefined && alert.direction === ''
+      : alert.direction !== '',
+  )
 
 export const healthSchema = z.object({
-  timings: z.array(z.object({
-    id: z.number(),
-    receivedAtMs: z.number(),
-    detectedAtMs: z.number(),
-    committedAtMs: z.number(),
-    terminalSentAtMs: z.number(),
-    terminalDoneAtMs: z.number(),
-    feedRenderedAtMs: z.number(),
-    overlayRenderedAtMs: z.number(),
-  })).nullish().transform((value) => value ?? []),
+  timings: z
+    .array(
+      z.object({
+        id: z.number(),
+        receivedAtMs: z.number(),
+        detectedAtMs: z.number(),
+        committedAtMs: z.number(),
+        terminalSentAtMs: z.number(),
+        terminalDoneAtMs: z.number(),
+        feedRenderedAtMs: z.number(),
+        overlayRenderedAtMs: z.number(),
+      }),
+    )
+    .nullish()
+    .transform((value) => value ?? []),
   quoteAgeMs: z.number().nullable().default(null),
-  streams: z.array(z.object({
-    shard: z.number(),
-    state: z.string(),
-    subscriptions: z.number(),
-    quoteAgeMs: z.number().nullable(),
-    ageP99Ms: z.number().default(0),
-    ageMaxMs: z.number().default(0),
-    detail: z.string(),
-  })).nullish().transform((value) => value ?? []),
-  storage: z.object({
-    size: z.number(), oldestMs: z.number(), writeMs: z.number(),
-    unsaved: z.number(), error: z.string(),
-  }).default({ size: 0, oldestMs: 0, writeMs: 0, unsaved: 0, error: '' }),
+  streams: z
+    .array(
+      z.object({
+        shard: z.number(),
+        state: z.string(),
+        subscriptions: z.number(),
+        quoteAgeMs: z.number().nullable(),
+        ageP99Ms: z.number().default(0),
+        ageMaxMs: z.number().default(0),
+        detail: z.string(),
+      }),
+    )
+    .nullish()
+    .transform((value) => value ?? []),
+  storage: z
+    .object({
+      size: z.number(),
+      oldestMs: z.number(),
+      writeMs: z.number(),
+      unsaved: z.number(),
+      error: z.string(),
+    })
+    .default({ size: 0, oldestMs: 0, writeMs: 0, unsaved: 0, error: '' }),
   volumeAgeMs: z.number().default(0),
   serviceError: z.string().default(''),
   usedWeight: z.number().default(0),
@@ -138,22 +212,35 @@ async function command(method: string, ...args: unknown[]): Promise<void> {
 }
 
 export const desktop = {
+  openListingURL: (value: string) => Browser.OpenURL(z.url({ protocol: /^https$/ }).parse(value)),
+  listingSource: () => invoke('ListingSource', listingSourceSchema),
+  saveListingSource: (endpoint: string, key: string) => command('SaveListingSource', endpoint, key),
+  clearListingKey: () => command('ClearListingKey'),
   alertRendered: (id: number, view: 'feed' | 'overlay') => command('AlertRendered', id, view),
   snapshot: () => invoke('GetSnapshot', snapshotSchema),
   saveRule: (rule: Rule) => invoke('SaveRule', ruleSchema, rule),
   deleteRule: (id: number) => command('DeleteRule', id),
+  setSoundMuted: (muted: boolean) => command('SetSoundMuted', muted),
   saveSettings: (settings: Settings) => command('SaveSettings', settings),
   saveProxy: (profile: ProxyProfile, use: boolean) => command('SaveProxy', profile, use),
   selectProxy: (id: string) => command('SelectProxy', id),
   deleteProxy: (id: string) => command('DeleteProxy', id),
   reconnect: () => command('Reconnect'),
-  listAlerts: (before: number, limit = 100) => invoke('ListAlerts', z.array(alertSchema), before, limit),
-  alertsAfter: (after: number, limit = 200) => invoke('AlertsAfter', z.array(alertSchema), after, limit),
+  listAlerts: (before: number, limit = 100) =>
+    invoke('ListAlerts', z.array(alertSchema), before, limit),
+  alertsAfter: (after: number, limit = 200) =>
+    invoke('AlertsAfter', z.array(alertSchema), after, limit),
   sessionAlerts: () => invoke('SessionAlerts', z.array(alertSchema)),
   openTerminal: (id: number, symbol: string, terminal: TerminalID) =>
     command('OpenTerminal', id, symbol, terminal),
   openTerminals: (id: number, symbol: string, terminals: TerminalID[]) =>
-    invoke('OpenTerminals', z.object({ opened: z.number(), error: z.string() }), id, symbol, terminals),
+    invoke(
+      'OpenTerminals',
+      z.object({ opened: z.number(), error: z.string() }),
+      id,
+      symbol,
+      terminals,
+    ),
   copySymbol: (symbol: string) => Clipboard.SetText(symbol),
   soundIds: () => invoke('SoundIDs', z.array(z.string())),
   importSound: (name: string, extension: string, encoded: string) =>
@@ -163,7 +250,11 @@ export const desktop = {
   hideOverlay: (afterId: number) => command('HideOverlay', afterId),
 }
 
-export function listen<T>(name: string, schema: z.ZodType<T>, handle: (value: T) => void): () => void {
+export function listen<T>(
+  name: string,
+  schema: z.ZodType<T>,
+  handle: (value: T) => void,
+): () => void {
   return Events.On(name, (event) => {
     const parsed = schema.safeParse(event.data)
     if (parsed.success) handle(parsed.data)
@@ -231,9 +322,13 @@ function alertBatches(handle: (alerts: Alert[], updates: AlertUpdate[]) => void)
 }
 
 export const events = {
+  listingHealth: (handle: (health: ListingHealth) => void) =>
+    listen('listing:health', listingHealthSchema, handle),
   alerts: alertBatches,
   health: (handle: (health: Health) => void) => listen('health', healthSchema, handle),
   rules: (handle: (rules: Rule[]) => void) => listen('rules:changed', z.array(ruleSchema), handle),
-  settings: (handle: (settings: Settings) => void) => listen('settings:changed', settingsSchema, handle),
-  sounds: (handle: (sounds: string[]) => void) => listen('sounds:changed', z.array(z.string()), handle),
+  settings: (handle: (settings: Settings) => void) =>
+    listen('settings:changed', settingsSchema, handle),
+  sounds: (handle: (sounds: string[]) => void) =>
+    listen('sounds:changed', z.array(z.string()), handle),
 }

@@ -11,12 +11,13 @@ import (
 )
 
 type terminalJob struct {
-	alertID  int64
-	symbol   string
-	terminal string
-	queued   time.Time
-	expires  time.Time
-	complete func(error, string)
+	exchanges []string
+	alertID   int64
+	symbol    string
+	terminal  string
+	queued    time.Time
+	expires   time.Time
+	complete  func(error, string)
 }
 
 func (c *Controller) startTerminals() {
@@ -43,7 +44,7 @@ func (c *Controller) startTerminals() {
 						ctx, cancel := context.WithDeadline(context.Background(), deadline)
 						started := time.Now()
 						c.markTerminal(job.alertID, false)
-						err = c.openInTerminal(ctx, job.symbol, job.terminal)
+						err = c.openInTerminal(ctx, job.symbol, job.terminal, job.exchanges...)
 						c.terminalRequestMs.Store(time.Since(started).Milliseconds())
 						c.markTerminal(job.alertID, true)
 						cancel()
@@ -82,7 +83,7 @@ func (c *Controller) enqueueAutomatic(alert core.Alert, expires time.Time) {
 	status := "ok"
 	var failures []error
 	for _, terminal := range alert.Terminals {
-		c.enqueueTerminal(terminalJob{alertID: alert.ID, symbol: alert.Symbol, terminal: terminal, queued: time.Now(), expires: expires,
+		c.enqueueTerminal(terminalJob{alertID: alert.ID, symbol: alert.Symbol, exchanges: alert.OpenExchanges, terminal: terminal, queued: time.Now(), expires: expires,
 			complete: func(err error, outcome string) {
 				mu.Lock()
 				defer mu.Unlock()

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
 	"time"
 )
 
@@ -33,7 +32,18 @@ func (c *Controller) OpenTerminals(id int64, symbol string, terminals []string) 
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	opened, err := c.openInTerminals(ctx, symbol, terminals)
+	var exchanges []string
+	if id > 0 {
+		alerts, err := c.store.ListAlerts(ctx, id+1, 1)
+		if err != nil {
+			return OpenResult{Error: err.Error()}
+		}
+		if len(alerts) == 1 && alerts[0].ID == id && alerts[0].Listing != nil {
+			exchanges = alerts[0].OpenExchanges
+			symbol = alerts[0].Symbol
+		}
+	}
+	opened, err := c.openInTerminals(ctx, symbol, terminals, exchanges...)
 	result := OpenResult{Opened: opened}
 	status := "manual-ok"
 	if err != nil {
@@ -47,20 +57,36 @@ func (c *Controller) OpenTerminals(id int64, symbol string, terminals []string) 
 	return result
 }
 
-func (c *Controller) openInTerminal(ctx context.Context, symbol, terminal string) error {
-	switch terminal {
-	case "vataga":
-		return c.terminal.Open(ctx, symbol)
-	case "tiger":
-		c.mu.RLock()
-		settings := c.settings
-		c.mu.RUnlock()
-		return c.tiger.Open(ctx, symbol, settings.TigerPort, settings.TigerLinkGroup)
-	default:
-		return errors.New("unknown terminal")
+func (c *Controller) openInTerminal(ctx context.Context, symbol, terminal string, exchanges ...string) error {
+	if len(exchanges) == 0 {
+		exchanges = []string{"binance"}
 	}
+	var unavailable []error
+	for _, exchange := range exchanges {
+		var err error
+		switch terminal {
+		case "vataga":
+			err = c.terminal.OpenExchange(ctx, symbol, exchange)
+		case "tiger":
+			c.mu.RLock()
+			settings := c.settings
+			c.mu.RUnlock()
+			err = c.tiger.OpenExchange(ctx, symbol, exchange, settings.TigerPort, settings.TigerLinkGroup)
+		default:
+			return errors.New("unknown terminal")
+		}
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, errSymbolUnavailable) {
+			return fmt.Errorf("%s: %w", exchange, err)
+		}
+		unavailable = append(unavailable, fmt.Errorf("%s: %w", exchange, err))
+	}
+	return errors.Join(unavailable...)
 }
-func (c *Controller) openInTerminals(ctx context.Context, symbol string, terminals []string) (int, error) {
+
+func (c *Controller) openInTerminals(ctx context.Context, symbol string, terminals []string, exchanges ...string) (int, error) {
 	if len(terminals) == 0 || len(terminals) > 2 {
 		return 0, errors.New("choose a terminal")
 	}
@@ -82,7 +108,7 @@ func (c *Controller) openInTerminals(ctx context.Context, symbol string, termina
 		return 0, errors.New("controller closed")
 	}
 	for _, terminal := range terminals {
-		c.enqueueTerminal(terminalJob{symbol: symbol, terminal: terminal, queued: time.Now(), expires: deadline,
+		c.enqueueTerminal(terminalJob{symbol: symbol, exchanges: exchanges, terminal: terminal, queued: time.Now(), expires: deadline,
 			complete: func(err error, _ string) {
 				if err != nil {
 					err = fmt.Errorf("%s: %w", terminal, err)

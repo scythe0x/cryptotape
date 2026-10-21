@@ -9,8 +9,11 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
 )
+
+var errSymbolUnavailable = errors.New("symbol unavailable")
 
 var validSymbol = regexp.MustCompile(`^[A-Z0-9_]+$`)
 
@@ -31,10 +34,29 @@ func NewTerminal() *Terminal {
 }
 
 func (t *Terminal) Open(ctx context.Context, symbol string) error {
-	if !validSymbol.MatchString(symbol) {
-		return errors.New("invalid Binance symbol")
+	return t.OpenExchange(ctx, symbol, "binance")
+}
+
+func (t *Terminal) OpenExchange(ctx context.Context, symbol, exchange string) error {
+	if exchange != "binance" && exchange != "bybit" && exchange != "okx" && exchange != "gate" {
+		return errors.New("unknown exchange")
 	}
-	endpoint := t.baseURL + "/api/open/zenica/binance/F/" + url.PathEscape(symbol)
+	if !validSymbol.MatchString(symbol) {
+		return errors.New("invalid symbol")
+	}
+	target := symbol
+	if exchange == "okx" || exchange == "gate" {
+		if !strings.HasSuffix(symbol, "USDT") || len(symbol) <= 4 {
+			return errors.New("invalid USDT futures symbol")
+		}
+		asset := strings.TrimSuffix(symbol, "USDT")
+		if exchange == "okx" {
+			target = asset + "-USDT-SWAP"
+		} else {
+			target = asset + "_USDT"
+		}
+	}
+	endpoint := t.baseURL + "/api/open/zenica/" + exchange + "/F/" + url.PathEscape(target)
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
 	if err != nil {
 		return err
@@ -44,6 +66,9 @@ func (t *Terminal) Open(ctx context.Context, symbol string) error {
 		return err
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		return errSymbolUnavailable
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("terminal returned %s", response.Status)
 	}

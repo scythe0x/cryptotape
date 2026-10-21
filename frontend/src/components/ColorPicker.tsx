@@ -1,18 +1,7 @@
 import * as Popover from '@radix-ui/react-popover'
 import { useTranslation } from '../i18n'
 import { Check } from 'lucide-react'
-
-const colors = [
-  ['red', '#fa423e'],
-  ['orange', '#f2994a'],
-  ['yellow', '#e7c95c'],
-  ['green', '#41c977'],
-  ['cyan', '#46c6df'],
-  ['blue', '#628cf0'],
-  ['violet', '#a78bfa'],
-  ['pink', '#e879b9'],
-  ['neutral', '#c5c5c5'],
-] as const
+import { alertColors } from '../colors'
 
 export function ColorPicker({ value, onChange }: { value: string; onChange: (color: string) => void }) {
   const { t } = useTranslation()
@@ -32,7 +21,7 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (col
           collisionPadding={12}
           aria-label={t('alertColors')}
         >
-          {colors.map(([name, color]) => (
+          {alertColors.map(([name, color]) => (
             <Popover.Close asChild key={color}>
               <button
                 type="button"

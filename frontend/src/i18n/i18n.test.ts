@@ -20,10 +20,11 @@ vi.mock('@wailsio/runtime', () => ({
 const settings = (language: 'en' | 'ru'): Settings => ({
   language,
   proxies: [], activeProxyId: '',
-  cooldownSeconds: 60,
   monitorId: '',
   tigerPort: 7819,
   tigerLinkGroup: 'A',
+  soundMuted: false,
+  bannersEnabled: true,
 })
 afterEach(() => {
   applyLanguage('en')
@@ -43,12 +44,17 @@ it('preserves interpolation variables in both dictionaries', () => {
   }
 })
 
-it('translates controls and sound labels while keeping user filenames intact', () => {
+it('translates controls while keeping sound names and user filenames intact', () => {
   applyLanguage('ru')
   expect(i18n.t('settings')).toBe('настройки')
   expect(i18n.t('openSymbol', { symbol: 'BTCUSDT' })).toBe('открыть BTCUSDT в терминале')
-  expect(soundLabel('chime')).toBe('перезвон')
-  expect(soundLabel('custom:123-my-sound.wav')).toBe('my-sound.wav')
+  for (const language of ['en', 'ru'] as const) {
+    applyLanguage(language)
+    for (const sound of ['bell', 'chime', 'notification', 'alarm', 'beep']) {
+      expect(soundLabel(sound)).toBe(sound)
+    }
+    expect(soundLabel('custom:123-my-sound.wav')).toBe('my-sound.wav')
+  }
 })
 
 it('translates diagnostics without changing terminal URLs or API responses', () => {

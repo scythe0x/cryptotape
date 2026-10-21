@@ -6,7 +6,7 @@ import { desktop } from '../api'
 import { useTranslation } from '../i18n'
 import { localizeDiagnostic } from '../i18n/diagnostics'
 import { nextProxyName, parseProxy } from '../proxies'
-import { Button, Input } from './ui'
+import { Button, Checkbox, Input } from './ui'
 
 type Props = {
   open: boolean
@@ -155,7 +155,7 @@ function ProxyEditor({ profile, settings, onSaved, onOpenChange }: Props) {
           />
         </label>
         <label className="checkbox-row">
-          <input type="checkbox" checked={use} onChange={(event) => setUse(event.target.checked)} />
+          <Checkbox checked={use} onChange={(event) => setUse(event.target.checked)} />
           {t('useProxy')}
         </label>
         {error && <div className="inline-error">{localizeDiagnostic(error)}</div>}

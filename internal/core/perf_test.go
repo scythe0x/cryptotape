@@ -13,7 +13,7 @@ func BenchmarkProcessMarkets(b *testing.B) {
 			for i := range rules {
 				rules[i] = Rule{ID: int64(i + 1), Percent: float64(5 + i), WindowSeconds: []int{60, 300}[i%2], MinQuoteVolume: 80e6}
 			}
-			engine := NewEngine(rules, DefaultSettings())
+			engine := NewEngine(rules)
 			var symbols [750]string
 			volumes := make(map[string]float64, len(symbols))
 			for i := range symbols {

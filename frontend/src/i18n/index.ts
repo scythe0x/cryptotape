@@ -23,18 +23,7 @@ export function applyLanguage(language: 'en' | 'ru') {
 
 export function soundLabel(id: string): string {
   if (id.startsWith('custom:')) return id.slice(7).replace(/^\d+-/, '')
-  switch (id) {
-    case 'none':
-      return i18n.t('noSound')
-    case 'bell':
-    case 'chime':
-    case 'notification':
-    case 'alarm':
-    case 'beep':
-      return i18n.t(id)
-    default:
-      return id
-  }
+  return id === 'none' ? i18n.t('noSound') : id
 }
 
 export default i18n

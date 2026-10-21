@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Settings2 } from 'lucide-react'
 import { desktop, events } from './api'
+import { SoundToggle } from './components/SoundToggle'
 import { ConnectionStatus } from './components/ConnectionStatus'
 import { AlertsTable } from './components/AlertsTable'
 import { SettingsDialog } from './components/SettingsDialog'
@@ -108,15 +109,18 @@ export function App() {
     <main className="app-shell">
       <div className="connection-bar">
         <ConnectionStatus health={health} />
-        <Button
-          size="icon"
-          variant="ghost"
-          aria-label={t('settings')}
-          title={t('settings')}
-          onClick={() => setSettingsOpen(true)}
-        >
-          <Settings2 size={15} />
-        </Button>
+        <div className="connection-actions">
+          <SoundToggle settings={settings} onError={setError} />
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={t('settings')}
+            title={t('settings')}
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings2 size={15} />
+          </Button>
+        </div>
       </div>
       {error && (
         <div className="error-banner" title={error} onClick={() => setError('')}>

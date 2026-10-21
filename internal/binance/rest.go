@@ -143,6 +143,9 @@ func (f *Feed) refreshServices() map[string]func(context.Context) error {
 		"symbols": func(ctx context.Context) error {
 			symbols, err := f.loadSymbols(ctx)
 			if err == nil {
+				if f.cb.Symbols != nil {
+					f.cb.Symbols(symbols)
+				}
 				f.refreshSymbols(symbols)
 			}
 			return err

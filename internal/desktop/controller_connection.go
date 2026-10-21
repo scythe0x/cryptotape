@@ -47,6 +47,11 @@ func (c *Controller) feedLoop(ctx context.Context, proxy string, minVolume float
 	err := binance.RetryConnection(ctx, func() (bool, error) {
 		var hadQuotes atomic.Bool
 		feed, err := binance.NewFeed(proxy, minVolume, binance.Callbacks{
+			Symbols: func(symbols []string) {
+				if c.version.Load() == version {
+					c.updateListingCatalog(symbols)
+				}
+			},
 			Quote: func(quote core.Quote) {
 				hadQuotes.Store(true)
 				if c.version.Load() == version {

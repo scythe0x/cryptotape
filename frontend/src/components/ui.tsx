@@ -18,3 +18,7 @@ export function Button({ variant = 'secondary', size = 'default', className, ...
 export function Input(props: ComponentProps<'input'>) {
   return <input {...props} className={cn('input', props.className)} />
 }
+
+export function Checkbox(props: Omit<ComponentProps<'input'>, 'type'>) {
+  return <input {...props} type="checkbox" className={cn('checkbox', props.className)} />
+}

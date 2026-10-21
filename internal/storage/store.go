@@ -19,6 +19,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"cryptotape/internal/core"
+	"cryptotape/internal/listings"
 )
 
 type Store struct{ db *sql.DB }
@@ -59,6 +60,10 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	store := &Store{db: db}
+	if _, err := db.Exec(`DELETE FROM listing_receipts WHERE seen_at_ms < ?`, time.Now().Add(-30*24*time.Hour).UnixMilli()); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if err = store.seed(); err != nil {
 		db.Close()
 		return nil, err
@@ -76,8 +81,8 @@ func (s *Store) seed() error {
 	}
 	if count == 0 {
 		for _, rule := range []core.Rule{
-			{Name: "soft move", Percent: 3, WindowSeconds: 60, Sound: "chime", Color: "#41c977", Volume: 1, MinQuoteVolume: 80_000_000, Terminals: []string{}},
-			{Name: "strong move", Percent: 10, WindowSeconds: 300, Sound: "alarm", Color: "#fa423e", Volume: 1, MinQuoteVolume: 80_000_000, Terminals: []string{"vataga"}},
+			{BannerSeconds: 15, Name: "soft move", Percent: 3, WindowSeconds: 60, Sound: "chime", Color: "#41c977", Volume: 1, MinQuoteVolume: 80_000_000, Terminals: []string{}},
+			{BannerSeconds: 15, Name: "strong move", Percent: 10, WindowSeconds: 300, Sound: "alarm", Color: "#fa423e", Volume: 1, MinQuoteVolume: 80_000_000, Terminals: []string{"vataga"}},
 		} {
 			if _, err := s.SaveRule(rule); err != nil {
 				return err
@@ -93,7 +98,7 @@ func (s *Store) seed() error {
 }
 
 func (s *Store) Rules() ([]core.Rule, error) {
-	rows, err := s.db.Query(`SELECT id, name, percent, window_seconds, sound, color, volume, min_quote_volume, terminals FROM rules ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, name, percent, window_seconds, sound, color, volume, min_quote_volume, terminals, kind, listing_exchanges, listing_types, banner_seconds, open_exchanges FROM rules ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -101,11 +106,20 @@ func (s *Store) Rules() ([]core.Rule, error) {
 	rules := make([]core.Rule, 0)
 	for rows.Next() {
 		var rule core.Rule
-		var terminals string
-		if err := rows.Scan(&rule.ID, &rule.Name, &rule.Percent, &rule.WindowSeconds, &rule.Sound, &rule.Color, &rule.Volume, &rule.MinQuoteVolume, &terminals); err != nil {
+		var terminals, exchanges, types, openExchanges string
+		if err := rows.Scan(&rule.ID, &rule.Name, &rule.Percent, &rule.WindowSeconds, &rule.Sound, &rule.Color, &rule.Volume, &rule.MinQuoteVolume, &terminals, &rule.Kind, &exchanges, &types, &rule.BannerSeconds, &openExchanges); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(terminals), &rule.Terminals); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(exchanges), &rule.ListingExchanges); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(types), &rule.ListingTypes); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(openExchanges), &rule.OpenExchanges); err != nil {
 			return nil, err
 		}
 		rules = append(rules, rule)
@@ -115,7 +129,13 @@ func (s *Store) Rules() ([]core.Rule, error) {
 
 func (s *Store) SaveRule(rule core.Rule) (core.Rule, error) {
 	rule.Name = strings.TrimSpace(rule.Name)
-	if rule.Name == "" || utf8.RuneCountInString(rule.Name) > 60 || rule.Percent < 0.1 || rule.Percent > 100 || rule.WindowSeconds < 5 || rule.WindowSeconds > 600 || rule.Sound == "" || !validColor.MatchString(rule.Color) || !finite(rule.Percent) || !finite(rule.Volume) || rule.Volume < 0 || rule.Volume > 1 || !finite(rule.MinQuoteVolume) || rule.MinQuoteVolume < 0 || !validTerminals(rule.Terminals) {
+	if rule.Kind == "" {
+		rule.Kind = core.PriceMove
+	}
+	if err := validateRuleKind(&rule); err != nil {
+		return rule, err
+	}
+	if !validBannerSeconds(rule.BannerSeconds) || rule.Name == "" || utf8.RuneCountInString(rule.Name) > 60 || rule.Sound == "" || !validColor.MatchString(rule.Color) || !finite(rule.Volume) || rule.Volume < 0 || rule.Volume > 1 || !validTerminals(rule.Terminals) {
 		return rule, errors.New("invalid alert rule")
 	}
 	if rule.Terminals == nil {
@@ -125,18 +145,30 @@ func (s *Store) SaveRule(rule core.Rule) (core.Rule, error) {
 	if err != nil {
 		return rule, err
 	}
+	exchanges, err := json.Marshal(rule.ListingExchanges)
+	if err != nil {
+		return rule, err
+	}
+	types, err := json.Marshal(rule.ListingTypes)
+	if err != nil {
+		return rule, err
+	}
+	openExchanges, err := json.Marshal(rule.OpenExchanges)
+	if err != nil {
+		return rule, err
+	}
 	if rule.ID == 0 {
-		result, err := s.db.Exec(`INSERT INTO rules(id,name,percent,window_seconds,sound,open_terminal,enabled,color,volume,min_quote_volume,terminals)
- VALUES ((SELECT MAX(value)+1 FROM (SELECT COALESCE(MAX(id),0) AS value FROM rules UNION ALL SELECT COALESCE(MAX(rule_id),0) AS value FROM alerts)),?,?,?,?,?,1,?,?,?,?)`,
-			rule.Name, rule.Percent, rule.WindowSeconds, rule.Sound, len(rule.Terminals) > 0, rule.Color, rule.Volume, rule.MinQuoteVolume, string(terminals))
+		result, err := s.db.Exec(`INSERT INTO rules(id,name,percent,window_seconds,sound,open_terminal,enabled,color,volume,min_quote_volume,terminals,kind,listing_exchanges,listing_types,banner_seconds,open_exchanges)
+ VALUES ((SELECT MAX(value)+1 FROM (SELECT COALESCE(MAX(id),0) AS value FROM rules UNION ALL SELECT COALESCE(MAX(rule_id),0) AS value FROM alerts)),?,?,?,?,?,1,?,?,?,?,?,?,?,?,?)`,
+			rule.Name, rule.Percent, rule.WindowSeconds, rule.Sound, len(rule.Terminals) > 0, rule.Color, rule.Volume, rule.MinQuoteVolume, string(terminals), rule.Kind, string(exchanges), string(types), rule.BannerSeconds, string(openExchanges))
 		if err != nil {
 			return rule, err
 		}
 		rule.ID, err = result.LastInsertId()
 		return rule, err
 	}
-	result, err := s.db.Exec(`UPDATE rules SET name=?, percent=?, window_seconds=?, sound=?, open_terminal=?, enabled=1,color=?,volume=?,min_quote_volume=?,terminals=? WHERE id=?`,
-		rule.Name, rule.Percent, rule.WindowSeconds, rule.Sound, len(rule.Terminals) > 0, rule.Color, rule.Volume, rule.MinQuoteVolume, string(terminals), rule.ID)
+	result, err := s.db.Exec(`UPDATE rules SET name=?, percent=?, window_seconds=?, sound=?, open_terminal=?, enabled=1,color=?,volume=?,min_quote_volume=?,terminals=?,kind=?,listing_exchanges=?,listing_types=?,banner_seconds=?,open_exchanges=? WHERE id=?`,
+		rule.Name, rule.Percent, rule.WindowSeconds, rule.Sound, len(rule.Terminals) > 0, rule.Color, rule.Volume, rule.MinQuoteVolume, string(terminals), rule.Kind, string(exchanges), string(types), rule.BannerSeconds, string(openExchanges), rule.ID)
 	if err != nil {
 		return rule, err
 	}
@@ -190,9 +222,6 @@ func (s *Store) SaveSettings(settings core.Settings) error {
 	if settings.Language != "en" && settings.Language != "ru" {
 		return errors.New("unsupported interface language")
 	}
-	if settings.CooldownSeconds < 0 || settings.CooldownSeconds > 3600 {
-		return errors.New("invalid settings")
-	}
 	if settings.TigerPort < 1 || settings.TigerPort > 65535 || !validLinkGroup.MatchString(settings.TigerLinkGroup) {
 		return errors.New("invalid Tiger port or link group")
 	}
@@ -216,6 +245,7 @@ func (s *Store) InsertAlert(candidate core.Candidate) (core.Alert, error) {
 }
 
 // publish only after the whole batch is committed.
+// results retain candidate positions; duplicate listings have a zero id and must not be published.
 func (s *Store) InsertAlerts(ctx context.Context, candidates []core.Candidate) ([]core.Alert, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -237,11 +267,32 @@ func (s *Store) InsertAlerts(ctx context.Context, candidates []core.Candidate) (
 }
 
 func insertAlert(ctx context.Context, tx *sql.Tx, candidate core.Candidate) (core.Alert, error) {
+	if candidate.Rule.IsListing() != (candidate.Listing != nil) {
+		return core.Alert{}, errors.New("invalid listing candidate")
+	}
+	if candidate.Listing != nil {
+		seen := time.Now().UnixMilli()
+		result, err := tx.ExecContext(ctx, `INSERT INTO listing_receipts(rule_id,event_key,seen_at_ms) VALUES(?,?,?)
+ ON CONFLICT(rule_id,event_key) DO UPDATE SET seen_at_ms=excluded.seen_at_ms WHERE listing_receipts.seen_at_ms<=?`, candidate.Rule.ID, listings.DedupKey(*candidate.Listing), seen, seen-int64((24*time.Hour)/time.Millisecond))
+		if err != nil {
+			return core.Alert{}, err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return core.Alert{}, err
+		}
+		// preserve batch positions; the pipeline skips a zero id without publishing actions.
+		if changed == 0 {
+			return core.Alert{}, nil
+		}
+	}
 	status := "skipped"
 	if len(candidate.Rule.Terminals) > 0 {
 		status = "pending"
 	}
 	alert := core.Alert{
+		OpenExchanges: append([]string{}, candidate.Rule.OpenExchanges...),
+		Kind:          candidate.Rule.Kind, Listing: candidate.Listing, BannerSeconds: candidate.Rule.BannerSeconds,
 		ReceivedAtMs: timestampMs(candidate.Received), DetectedAtMs: timestampMs(candidate.Detected), WriteStartedAtMs: time.Now().UnixMilli(),
 		RuleID: candidate.Rule.ID, RuleName: candidate.Rule.Name, Symbol: candidate.Symbol,
 		Direction: candidate.Direction, ChangePercent: candidate.ChangePercent,
@@ -250,6 +301,9 @@ func insertAlert(ctx context.Context, tx *sql.Tx, candidate core.Candidate) (cor
 		CreatedAtMs: timestampMs(candidate.Detected), Sound: candidate.Rule.Sound,
 		Color: candidate.Rule.Color, Volume: candidate.Rule.Volume, Terminals: append([]string{}, candidate.Rule.Terminals...), TerminalStatus: status,
 	}
+	if alert.Kind == "" {
+		alert.Kind = core.PriceMove
+	}
 	if alert.CreatedAtMs == 0 {
 		alert.CreatedAtMs = time.Now().UnixMilli()
 	}
@@ -257,12 +311,24 @@ func insertAlert(ctx context.Context, tx *sql.Tx, candidate core.Candidate) (cor
 	if err != nil {
 		return alert, err
 	}
+	openExchanges, err := json.Marshal(alert.OpenExchanges)
+	if err != nil {
+		return alert, err
+	}
+	listing := ""
+	if alert.Listing != nil {
+		raw, err := json.Marshal(alert.Listing)
+		if err != nil {
+			return alert, err
+		}
+		listing = string(raw)
+	}
 	result, err := tx.ExecContext(ctx, `INSERT INTO alerts(rule_id, rule_name, symbol, direction, change_percent, price, spread_percent,
-		quote_volume, event_time_ms, created_at_ms, sound, open_terminal, terminal_status, terminal_error,color,volume,terminals,received_at_ms,detected_at_ms,write_started_at_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '',?,?,?,?,?,?)`,
+		quote_volume, event_time_ms, created_at_ms, sound, open_terminal, terminal_status, terminal_error,color,volume,terminals,received_at_ms,detected_at_ms,write_started_at_ms,kind,listing,banner_seconds,open_exchanges)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '',?,?,?,?,?,?,?,NULLIF(?,''),?,?)`,
 		alert.RuleID, alert.RuleName, alert.Symbol, alert.Direction, alert.ChangePercent, alert.Price,
 		alert.SpreadPercent, alert.QuoteVolume, alert.EventTimeMs, alert.CreatedAtMs,
-		alert.Sound, len(alert.Terminals) > 0, alert.TerminalStatus, alert.Color, alert.Volume, string(terminals), alert.ReceivedAtMs, alert.DetectedAtMs, alert.WriteStartedAtMs)
+		alert.Sound, len(alert.Terminals) > 0, alert.TerminalStatus, alert.Color, alert.Volume, string(terminals), alert.ReceivedAtMs, alert.DetectedAtMs, alert.WriteStartedAtMs, alert.Kind, listing, alert.BannerSeconds, string(openExchanges))
 	if err != nil {
 		return alert, err
 	}
@@ -301,7 +367,7 @@ func (s *Store) ListAlerts(ctx context.Context, before int64, limit int) ([]core
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id, rule_id, rule_name, symbol, direction, change_percent, price,
 		spread_percent, quote_volume, event_time_ms, created_at_ms, sound, color, volume, terminals,
-		terminal_status, terminal_error, received_at_ms, detected_at_ms, write_started_at_ms FROM alerts WHERE id < ? ORDER BY id DESC LIMIT ?`, before, limit)
+		terminal_status, terminal_error, received_at_ms, detected_at_ms, write_started_at_ms, kind, listing, banner_seconds, open_exchanges FROM alerts WHERE id < ? ORDER BY id DESC LIMIT ?`, before, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +380,7 @@ func (s *Store) AlertsAfter(ctx context.Context, after int64, limit int) ([]core
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id, rule_id, rule_name, symbol, direction, change_percent, price,
 		spread_percent, quote_volume, event_time_ms, created_at_ms, sound, color, volume, terminals,
-		terminal_status, terminal_error, received_at_ms, detected_at_ms, write_started_at_ms FROM alerts WHERE id > ? ORDER BY id ASC LIMIT ?`, after, limit)
+		terminal_status, terminal_error, received_at_ms, detected_at_ms, write_started_at_ms, kind, listing, banner_seconds, open_exchanges FROM alerts WHERE id > ? ORDER BY id ASC LIMIT ?`, after, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -349,11 +415,12 @@ func scanAlerts(rows *sql.Rows, limit int) ([]core.Alert, error) {
 	alerts := make([]core.Alert, 0, limit)
 	for rows.Next() {
 		var alert core.Alert
-		var terminals string
+		var terminals, openExchanges string
+		var listing sql.NullString
 		if err := rows.Scan(&alert.ID, &alert.RuleID, &alert.RuleName, &alert.Symbol, &alert.Direction,
 			&alert.ChangePercent, &alert.Price, &alert.SpreadPercent, &alert.QuoteVolume,
 			&alert.EventTimeMs, &alert.CreatedAtMs, &alert.Sound, &alert.Color, &alert.Volume, &terminals,
-			&alert.TerminalStatus, &alert.TerminalError, &alert.ReceivedAtMs, &alert.DetectedAtMs, &alert.WriteStartedAtMs); err != nil {
+			&alert.TerminalStatus, &alert.TerminalError, &alert.ReceivedAtMs, &alert.DetectedAtMs, &alert.WriteStartedAtMs, &alert.Kind, &listing, &alert.BannerSeconds, &openExchanges); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(terminals), &alert.Terminals); err != nil {
@@ -361,6 +428,14 @@ func scanAlerts(rows *sql.Rows, limit int) ([]core.Alert, error) {
 		}
 		if alert.Terminals == nil {
 			alert.Terminals = []string{}
+		}
+		if listing.Valid {
+			if err := json.Unmarshal([]byte(listing.String), &alert.Listing); err != nil {
+				return nil, err
+			}
+		}
+		if err := json.Unmarshal([]byte(openExchanges), &alert.OpenExchanges); err != nil {
+			return nil, err
 		}
 		alerts = append(alerts, alert)
 	}

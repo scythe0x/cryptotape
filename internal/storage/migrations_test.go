@@ -41,7 +41,7 @@ func TestMigratesLegacyRulesAndKeepsAlertHistory(t *testing.T) {
 		t.Fatalf("rules: %+v %v", rules, err)
 	}
 	rule := rules[0]
-	if rule.MinQuoteVolume != 123000000 || rule.Volume != 1 || len(rule.Terminals) != 1 || rule.Terminals[0] != "vataga" {
+	if rule.BannerSeconds != core.BannerUntilClosed || rule.MinQuoteVolume != 123000000 || rule.Volume != 1 || len(rule.Terminals) != 1 || rule.Terminals[0] != "vataga" {
 		t.Fatalf("lost legacy settings: %+v", rule)
 	}
 	settings, err := store.Settings()
@@ -49,7 +49,7 @@ func TestMigratesLegacyRulesAndKeepsAlertHistory(t *testing.T) {
 		t.Fatalf("Tiger defaults: %+v %v", settings, err)
 	}
 	alerts, err := store.ListAlerts(context.Background(), 0, 100)
-	if err != nil || len(alerts) != 1 || alerts[0].TerminalStatus != "ok" {
+	if err != nil || len(alerts) != 1 || alerts[0].BannerSeconds != core.BannerUntilClosed || alerts[0].TerminalStatus != "ok" {
 		t.Fatalf("history: %+v %v", alerts, err)
 	}
 	rule.Color = "#46c6df"
@@ -122,7 +122,13 @@ func TestMigratesVersionOneWithoutLosingAlerts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, statement := range []string{"ALTER TABLE alerts DROP COLUMN received_at_ms", "ALTER TABLE alerts DROP COLUMN detected_at_ms", "ALTER TABLE alerts DROP COLUMN write_started_at_ms", "PRAGMA user_version=1"} {
+	for _, statement := range []string{
+		"ALTER TABLE alerts DROP COLUMN received_at_ms", "ALTER TABLE alerts DROP COLUMN detected_at_ms", "ALTER TABLE alerts DROP COLUMN write_started_at_ms",
+		"ALTER TABLE rules DROP COLUMN open_exchanges", "ALTER TABLE alerts DROP COLUMN open_exchanges",
+		"ALTER TABLE rules DROP COLUMN banner_seconds", "ALTER TABLE alerts DROP COLUMN banner_seconds",
+		"ALTER TABLE alerts DROP COLUMN kind", "ALTER TABLE alerts DROP COLUMN listing", "ALTER TABLE rules DROP COLUMN kind",
+		"ALTER TABLE rules DROP COLUMN listing_exchanges", "ALTER TABLE rules DROP COLUMN listing_types", "DROP TABLE listing_receipts", "PRAGMA user_version=1",
+	} {
 		if _, err := store.db.Exec(statement); err != nil {
 			t.Fatal(err)
 		}

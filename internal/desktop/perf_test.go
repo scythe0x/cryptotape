@@ -36,7 +36,7 @@ func BenchmarkAlertPipelineBurst(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		c.engine = core.NewEngine(rules, core.DefaultSettings())
+		c.engine = core.NewEngine(rules)
 		c.engine.SetVolumes(volumes)
 		base := time.Now().Add(-time.Second)
 		for _, symbol := range symbols {

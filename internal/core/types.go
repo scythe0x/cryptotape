@@ -2,30 +2,38 @@ package core
 
 import "time"
 
+const BannerUntilClosed = -1
+
 type Rule struct {
-	ID             int64    `json:"id"`
-	Name           string   `json:"name"`
-	Percent        float64  `json:"percent"`
-	WindowSeconds  int      `json:"windowSeconds"`
-	Sound          string   `json:"sound"`
-	Color          string   `json:"color"`
-	Volume         float64  `json:"volume"`
-	MinQuoteVolume float64  `json:"minQuoteVolume"`
-	Terminals      []string `json:"terminals"`
+	OpenExchanges    []string `json:"openExchanges"`
+	BannerSeconds    int      `json:"bannerSeconds"`
+	Kind             RuleKind `json:"kind"`
+	ListingExchanges []string `json:"listingExchanges"`
+	ListingTypes     []string `json:"listingTypes"`
+	ID               int64    `json:"id"`
+	Name             string   `json:"name"`
+	Percent          float64  `json:"percent"`
+	WindowSeconds    int      `json:"windowSeconds"`
+	Sound            string   `json:"sound"`
+	Color            string   `json:"color"`
+	Volume           float64  `json:"volume"`
+	MinQuoteVolume   float64  `json:"minQuoteVolume"`
+	Terminals        []string `json:"terminals"`
 }
 
 type Settings struct {
-	Language        string         `json:"language"`
-	Proxies         []ProxyProfile `json:"proxies"`
-	ActiveProxyID   string         `json:"activeProxyId"`
-	CooldownSeconds int            `json:"cooldownSeconds"`
-	MonitorID       string         `json:"monitorId"`
-	TigerPort       int            `json:"tigerPort"`
-	TigerLinkGroup  string         `json:"tigerLinkGroup"`
+	SoundMuted     bool           `json:"soundMuted"`
+	BannersEnabled bool           `json:"bannersEnabled"`
+	Language       string         `json:"language"`
+	Proxies        []ProxyProfile `json:"proxies"`
+	ActiveProxyID  string         `json:"activeProxyId"`
+	MonitorID      string         `json:"monitorId"`
+	TigerPort      int            `json:"tigerPort"`
+	TigerLinkGroup string         `json:"tigerLinkGroup"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{Proxies: []ProxyProfile{}, Language: "ru", CooldownSeconds: 60, TigerPort: 7819, TigerLinkGroup: "A"}
+	return Settings{BannersEnabled: true, Proxies: []ProxyProfile{}, Language: "ru", TigerPort: 7819, TigerLinkGroup: "A"}
 }
 
 type Quote struct {
@@ -39,6 +47,7 @@ type Quote struct {
 }
 
 type Candidate struct {
+	Listing       *ListingDetails
 	Detected      time.Time
 	Expires       time.Time
 	Rule          Rule
@@ -53,26 +62,30 @@ type Candidate struct {
 }
 
 type Alert struct {
-	ReceivedAtMs     int64    `json:"receivedAtMs"`
-	DetectedAtMs     int64    `json:"detectedAtMs"`
-	WriteStartedAtMs int64    `json:"writeStartedAtMs"`
-	ID               int64    `json:"id"`
-	RuleID           int64    `json:"ruleId"`
-	RuleName         string   `json:"ruleName"`
-	Symbol           string   `json:"symbol"`
-	Direction        string   `json:"direction"`
-	ChangePercent    float64  `json:"changePercent"`
-	Price            float64  `json:"price"`
-	SpreadPercent    float64  `json:"spreadPercent"`
-	QuoteVolume      float64  `json:"quoteVolume"`
-	EventTimeMs      int64    `json:"eventTimeMs"`
-	CreatedAtMs      int64    `json:"createdAtMs"`
-	Sound            string   `json:"sound"`
-	Color            string   `json:"color"`
-	Volume           float64  `json:"volume"`
-	Terminals        []string `json:"terminals"`
-	TerminalStatus   string   `json:"terminalStatus"`
-	TerminalError    string   `json:"terminalError"`
+	OpenExchanges    []string        `json:"openExchanges"`
+	BannerSeconds    int             `json:"bannerSeconds"`
+	Kind             RuleKind        `json:"kind"`
+	Listing          *ListingDetails `json:"listing,omitempty"`
+	ReceivedAtMs     int64           `json:"receivedAtMs"`
+	DetectedAtMs     int64           `json:"detectedAtMs"`
+	WriteStartedAtMs int64           `json:"writeStartedAtMs"`
+	ID               int64           `json:"id"`
+	RuleID           int64           `json:"ruleId"`
+	RuleName         string          `json:"ruleName"`
+	Symbol           string          `json:"symbol"`
+	Direction        string          `json:"direction"`
+	ChangePercent    float64         `json:"changePercent"`
+	Price            float64         `json:"price"`
+	SpreadPercent    float64         `json:"spreadPercent"`
+	QuoteVolume      float64         `json:"quoteVolume"`
+	EventTimeMs      int64           `json:"eventTimeMs"`
+	CreatedAtMs      int64           `json:"createdAtMs"`
+	Sound            string          `json:"sound"`
+	Color            string          `json:"color"`
+	Volume           float64         `json:"volume"`
+	Terminals        []string        `json:"terminals"`
+	TerminalStatus   string          `json:"terminalStatus"`
+	TerminalError    string          `json:"terminalError"`
 }
 
 type StreamHealth struct {

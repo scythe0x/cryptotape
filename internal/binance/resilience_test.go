@@ -132,7 +132,7 @@ func TestSubscriptionErrorsAndTimeout(t *testing.T) {
 
 func TestRotationDoesNotResetOrDuplicateSignals(t *testing.T) {
 	var connections, gaps, signals atomic.Int32
-	engine := core.NewEngine([]core.Rule{{ID: 1, Percent: 5, WindowSeconds: 300}}, core.DefaultSettings())
+	engine := core.NewEngine([]core.Rule{{ID: 1, Percent: 5, WindowSeconds: 300}})
 	at := time.Now().UnixMilli()
 	f := localFeed(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)

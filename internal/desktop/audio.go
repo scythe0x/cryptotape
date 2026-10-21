@@ -33,6 +33,7 @@ type Audio struct {
 	context *oto.Context
 	player  *oto.Player
 	latest  int64
+	muted   bool
 	sounds  map[string][]byte
 	dir     string
 }
@@ -133,6 +134,15 @@ func (a *Audio) Import(name, extension, encoded string) (string, error) {
 	return id, nil
 }
 
+func (a *Audio) SetMuted(muted bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.muted = muted
+	if muted && a.player != nil {
+		a.player.Pause()
+	}
+}
+
 func (a *Audio) Play(id string, volume float64) error {
 	return a.play(id, 0, volume)
 }
@@ -147,9 +157,13 @@ func (a *Audio) play(id string, alertID int64, volume float64) error {
 	}
 	a.mu.RLock()
 	pcm, exists := a.sounds[id]
+	muted := a.muted
 	a.mu.RUnlock()
 	if !exists && id != "none" {
 		return errors.New("unknown sound")
+	}
+	if alertID > 0 && muted {
+		return nil
 	}
 	if id != "none" {
 		if err := a.Warm(); err != nil {
@@ -158,7 +172,7 @@ func (a *Audio) play(id string, alertID int64, volume float64) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if alertID > 0 && alertID <= a.latest {
+	if alertID > 0 && (a.muted || alertID <= a.latest) {
 		return nil
 	}
 	if alertID > 0 {

@@ -84,6 +84,10 @@ func (c *Controller) saveCandidates(batch []queuedCandidate) {
 		return
 	}
 	for i, alert := range alerts {
+		if alert.ID == 0 {
+			c.actionWG.Done()
+			continue
+		}
 		c.recordCommit(alert, batch[i].candidate, committed)
 
 		c.enqueueAutomatic(alert, batch[i].candidate.Expires)

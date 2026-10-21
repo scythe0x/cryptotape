@@ -15,6 +15,7 @@ func (c *Controller) SaveSettings(settings core.Settings) error {
 	c.mu.RLock()
 	settings.Proxies = slices.Clone(c.settings.Proxies)
 	settings.ActiveProxyID = c.settings.ActiveProxyID
+	settings.SoundMuted = c.settings.SoundMuted
 	c.mu.RUnlock()
 	return c.applySettings(settings)
 }
@@ -35,9 +36,8 @@ func (c *Controller) applySettings(settings core.Settings) error {
 	}
 	c.mu.Lock()
 	c.settings = settings
-	rules := append([]core.Rule(nil), c.rules...)
+	c.audio.SetMuted(settings.SoundMuted)
 	c.mu.Unlock()
-	c.engine.Configure(rules, settings)
 	c.emit("settings:changed", settings)
 	if previous != route {
 		c.Reconnect()
@@ -105,4 +105,18 @@ func (c *Controller) DeleteProxy(id string) error {
 		settings.ActiveProxyID = ""
 	}
 	return c.applySettings(settings)
+}
+
+func (c *Controller) SetSoundMuted(muted bool) error {
+	c.settingsMu.Lock()
+	defer c.settingsMu.Unlock()
+	settings := c.proxySettings()
+	settings.SoundMuted = muted
+	return c.applySettings(settings)
+}
+
+func (c *Controller) BannersEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.settings.BannersEnabled
 }

@@ -37,8 +37,8 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
-      - run: go test -count=1 ./internal/... .
-      - run: go vet ./internal/... .
+      - run: go test -count=1 ./internal/... ./cmd/... .
+      - run: go vet ./internal/... ./cmd/... .
       - run: go build -tags production -o build/bin/cryptotape.exe .
 
   macos-race:

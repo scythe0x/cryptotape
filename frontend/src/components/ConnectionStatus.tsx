@@ -1,5 +1,5 @@
 import type { Health } from '../api'
-import { quoteAgeState } from '../connection'
+import { latencyState } from '../connection'
 import { useTranslation } from '../i18n'
 import { localizeDiagnostic } from '../i18n/diagnostics'
 import { desktop } from '../api'
@@ -11,20 +11,20 @@ export function ConnectionStatus({ health }: { health: Health | null }) {
   const { t } = useTranslation()
   const [error, setError] = useState('')
   const online = health?.state === 'connected' || health?.state === 'warming' || health?.state === 'degraded'
-  const age = online ? health.quoteAgeMs : null
+  const ping = online ? health.pingMs : null
   const connecting = !health || ['starting', 'connecting', 'reconnecting'].includes(health.state)
-  const state = online ? quoteAgeState(age) : connecting ? 'warning' : 'offline'
+  const state = online ? latencyState(ping) : connecting ? 'warning' : 'offline'
 
   return (
     <div
       className={`connection-status latency-${state}`}
       role="status"
-      title={`${health ? localizeDiagnostic(health.detail) : t('connecting')} · ${t('pingDescription')}: ${health?.pingMs ?? '—'} ms${health?.serviceError ? ` · ${health.serviceError}` : ''}`}
+      title={`${health ? localizeDiagnostic(health.detail) : t('connecting')} · ${t('pingDescription')}: ${health?.pingMs ?? '—'} ms · ${t('quoteAge')}: ${health?.quoteAgeMs ?? '—'} ms${health?.serviceError ? ` · ${health.serviceError}` : ''}`}
     >
       <Wifi size={14} aria-hidden="true" />
       {online ? (
         <span className="connection-ping">
-          {age === null ? '—' : age}<span> {t('ms')}</span>
+          {ping === null ? '—' : ping}<span> {t('ms')}</span>
         </span>
       ) : (
         <span className="connection-label">

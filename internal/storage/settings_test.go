@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 )
@@ -18,6 +19,9 @@ func TestLanguageDefaultsForExistingSettingsAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if settings.SoundMuted || !settings.BannersEnabled {
+		t.Fatal("legacy settings did not default to enabled sounds and banners")
+	}
 	if settings.Language != "ru" {
 		t.Fatalf("legacy settings language: %q", settings.Language)
 	}
@@ -31,6 +35,17 @@ func TestLanguageDefaultsForExistingSettingsAndPersists(t *testing.T) {
 	}
 	if saved.Language != "en" {
 		t.Fatal("language was not saved")
+	}
+	var payload string
+	if err = store.db.QueryRow(`SELECT payload FROM settings WHERE id=1`).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal([]byte(payload), &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := fields["cooldownSeconds"]; exists {
+		t.Fatal("obsolete cooldown setting was saved")
 	}
 	settings.Language = "de"
 	if err = store.SaveSettings(settings); err == nil {

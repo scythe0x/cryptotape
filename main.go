@@ -45,6 +45,10 @@ func (s *DesktopService) DeleteRule(id int64) error {
 	return s.controller.DeleteRule(id)
 }
 
+func (s *DesktopService) SetSoundMuted(muted bool) error {
+	return s.controller.SetSoundMuted(muted)
+}
+
 func (s *DesktopService) SaveSettings(settings core.Settings) error {
 	if err := s.controller.SaveSettings(settings); err != nil {
 		return err
@@ -68,6 +72,12 @@ func (s *DesktopService) DeleteProxy(id string) error {
 func (s *DesktopService) Reconnect() {
 	s.controller.Reconnect()
 }
+
+func (s *DesktopService) ListingSource() desktop.ListingSource { return s.controller.ListingSource() }
+func (s *DesktopService) SaveListingSource(endpoint, key string) error {
+	return s.controller.SaveListingSource(endpoint, key)
+}
+func (s *DesktopService) ClearListingKey() error { return s.controller.ClearListingKey() }
 
 func (s *DesktopService) ListAlerts(before int64, limit int) ([]core.Alert, error) {
 	return s.controller.ListAlerts(before, limit)
@@ -114,6 +124,9 @@ func (s *DesktopService) HideOverlay(afterID int64) {
 func (s *DesktopService) showOverlay(id int64) {
 	s.overlayMu.Lock()
 	defer s.overlayMu.Unlock()
+	if !s.controller.BannersEnabled() {
+		return
+	}
 	s.latestID = max(s.latestID, id)
 	if !s.visible {
 		s.overlay.Show()
@@ -154,8 +167,14 @@ func main() {
 	}
 	service := &DesktopService{}
 	controller, err := desktop.NewController(path, func(name string, data any) {
-		if alert, ok := data.(core.Alert); name == "alert:new" && ok && service.overlay != nil {
+		if alert, ok := data.(core.Alert); name == "alert:new" && ok && alert.BannerSeconds != 0 && service.overlay != nil {
 			service.showOverlay(alert.ID)
+		}
+		if settings, ok := data.(core.Settings); name == "settings:changed" && ok && !settings.BannersEnabled && service.overlay != nil {
+			service.overlayMu.Lock()
+			service.overlay.Hide()
+			service.visible = false
+			service.overlayMu.Unlock()
 		}
 		if service.app != nil {
 			service.app.Event.Emit(name, data)

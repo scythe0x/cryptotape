@@ -1,6 +1,6 @@
 import { useTranslation } from '../i18n'
 import vataga from '../assets/vataga.svg'
-import tiger from '../assets/tiger.ico'
+import tiger from '../assets/tiger.svg'
 import type { TerminalID } from '../api'
 
 export const terminals: { id: TerminalID; name: string; icon: string }[] = [
@@ -24,7 +24,7 @@ export function TerminalButton({ id, active = false, toggle = false, onClick, di
       onClick={onClick}
       disabled={disabled}
     >
-      <img src={terminal.icon} alt="" draggable={false} />
+      <img src={terminal.icon} alt="" width={toggle ? 23 : 15} height={toggle ? 23 : 15} draggable={false} />
     </button>
   )
 }

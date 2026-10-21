@@ -4,12 +4,12 @@ import * as Tabs from '@radix-ui/react-tabs'
 import { X } from 'lucide-react'
 import type { Monitor, Rule, Settings } from '../api'
 import { desktop, languageSchema } from '../api'
-import { Button, Input } from './ui'
-import { HelpTip } from './HelpTip'
+import { Button, Checkbox, Input } from './ui'
 import { useTranslation } from '../i18n'
 import { localizeDiagnostic } from '../i18n/diagnostics'
 import { RulesSettings } from './RulesSettings'
 import { ProxySettings } from './ProxySettings'
+import { ListingSourceSettings } from './ListingSourceSettings'
 
 type Props = {
   open: boolean
@@ -77,6 +77,7 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
         <Tabs.List className="settings-tabs" aria-label={t('settingsSections')}>
           <Tabs.Trigger value="alerts">{t('alerts')}</Tabs.Trigger>
           <Tabs.Trigger value="proxies">{t('proxies')}</Tabs.Trigger>
+          <Tabs.Trigger value="listings">{t('listingsSource')}</Tabs.Trigger>
           <Tabs.Trigger value="general">{t('general')}</Tabs.Trigger>
         </Tabs.List>
         <Tabs.Content value="alerts" className="settings-tab-content">
@@ -84,6 +85,9 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
         </Tabs.Content>
         <Tabs.Content value="proxies">
           <ProxySettings settings={settings} onSaved={onSaved} />
+        </Tabs.Content>
+        <Tabs.Content value="listings" className="settings-tab-content">
+          <ListingSourceSettings />
         </Tabs.Content>
         <Tabs.Content value="general">
           <form onSubmit={save} className="form-stack">
@@ -100,20 +104,13 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
                 <option value="ru">Русский</option>
               </select>
             </label>
-            <div className="cooldown-field">
-              <div className="label-with-help">
-                <label htmlFor="cooldown-seconds">{t('cooldown')}</label>
-                <HelpTip label={t('cooldownHelpLabel')}>{t('cooldownHelp')}</HelpTip>
-              </div>
-              <Input
-                id="cooldown-seconds"
-                type="number"
-                min="0"
-                max="3600"
-                value={draft.cooldownSeconds}
-                onChange={(event) => setDraft({ ...draft, cooldownSeconds: Number(event.target.value) })}
+            <label className="checkbox-row">
+              <Checkbox
+                checked={draft.bannersEnabled}
+                onChange={(event) => setDraft({ ...draft, bannersEnabled: event.target.checked })}
               />
-            </div>
+              {t('bannersEnabled')}
+            </label>
             <div className="form-grid">
               <label>
                 {t('tigerPort')}

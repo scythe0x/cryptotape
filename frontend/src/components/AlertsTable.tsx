@@ -18,6 +18,7 @@ import { useAlertRendered } from '../useAlertRendered'
 import { AlertBadge } from './AlertBadge'
 import { ExchangeIcon } from './ExchangeIcon'
 import { TerminalButton, terminals } from './TerminalButton'
+import { ListingSummary } from './ListingSummary'
 
 type Props = {
   alerts: Alert[]
@@ -81,7 +82,7 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError }: Props
             title={t('copySymbol', { symbol: row.original.symbol })}
             onClick={() => void copy(row.original.symbol)}
           >
-            {copied === row.original.symbol ? <Check size={12} /> : <ExchangeIcon />}
+            {copied === row.original.symbol ? <Check size={12} /> : <ExchangeIcon exchange={row.original.listing?.exchange ?? 'binance'} />}
             <strong>
               <Ticker symbol={row.original.symbol} />
             </strong>
@@ -91,13 +92,16 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError }: Props
       },
       {
         accessorKey: 'changePercent',
-        header: t('move'),
-        cell: ({ row }) => (
-          <span className={row.original.direction === 'down' ? 'negative' : 'positive'}>
-            {row.original.changePercent > 0 ? '+' : ''}
-            {row.original.changePercent.toFixed(2)}%
-          </span>
-        ),
+        header: t('alertEvent'),
+        cell: ({ row }) =>
+          row.original.kind === 'listing' ? (
+            <ListingSummary alert={row.original} />
+          ) : (
+            <span className={row.original.direction === 'down' ? 'negative' : 'positive'}>
+              {row.original.changePercent > 0 ? '+' : ''}
+              {row.original.changePercent.toFixed(2)}%
+            </span>
+          ),
         size: 80,
       },
       {
@@ -128,7 +132,9 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError }: Props
     [colors, copy, copied, open, t],
   )
 
-  const gridTemplateColumns = columns.map((column) => `minmax(0, ${column.size ?? 150}fr)`).join(' ')
+  const gridTemplateColumns = columns
+    .map((column) => `minmax(0, ${column.size ?? 150}fr)`)
+    .join(' ')
 
   const table = useReactTable({
     data: alerts,
@@ -153,7 +159,10 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError }: Props
     getItemKey,
     anchorTo: pausedAt === null ? 'start' : 'end',
   })
-  useAlertRendered(virtualizer.getVirtualItems().map((item) => rows[item.index].original.id), 'feed')
+  useAlertRendered(
+    virtualizer.getVirtualItems().map((item) => rows[item.index].original.id),
+    'feed',
+  )
   const unseen = pausedAt === null ? 0 : alerts.filter((alert) => alert.id > pausedAt).length
 
   function onScroll() {
@@ -162,7 +171,11 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError }: Props
       if (element.scrollTop <= 8) setPausedAt(null)
       else setPausedAt((current) => current ?? alerts[0]?.id ?? 0)
     }
-    if (element && hasMore && element.scrollHeight - element.scrollTop - element.clientHeight < 260) {
+    if (
+      element &&
+      hasMore &&
+      element.scrollHeight - element.scrollTop - element.clientHeight < 260
+    ) {
       loadMore()
     }
   }
@@ -205,7 +218,9 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError }: Props
                     gridTemplateColumns,
                   }}
                   title={
-                    row.original.terminalError ? localizeDiagnostic(row.original.terminalError) : undefined
+                    row.original.terminalError
+                      ? localizeDiagnostic(row.original.terminalError)
+                      : undefined
                   }
                 >
                   {row.getVisibleCells().map((cell) => (

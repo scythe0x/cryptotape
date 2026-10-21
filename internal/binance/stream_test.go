@@ -121,10 +121,17 @@ func TestBookStreamDecodesAndFiltersRealFrames(t *testing.T) {
 	}
 }
 
-func TestFeedStartupAndReconnectProduceFreshSignals(t *testing.T) {
-	settings := core.DefaultSettings()
-	settings.CooldownSeconds = 0
-	engine := core.NewEngine([]core.Rule{{ID: 1, Percent: 5, WindowSeconds: 300, MinQuoteVolume: 80e6}}, settings)
+func TestFeedStartupSignalsAndReconnectPreservesCooldown(t *testing.T) {
+	for _, elapsed := range []time.Duration{0, 5 * time.Minute} {
+		t.Run(elapsed.String(), func(t *testing.T) {
+			testFeedReconnectCooldown(t, elapsed)
+		})
+	}
+}
+
+func testFeedReconnectCooldown(t *testing.T, elapsed time.Duration) {
+	t.Helper()
+	engine := core.NewEngine([]core.Rule{{ID: 1, Percent: 5, WindowSeconds: 300, MinQuoteVolume: 80e6}})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var connections atomic.Int32
@@ -211,6 +218,10 @@ func TestFeedStartupAndReconnectProduceFreshSignals(t *testing.T) {
 		},
 		Health: func(core.Health) {},
 		Quote: func(q core.Quote) {
+			if received >= 2 {
+				q.Received = q.Received.Add(elapsed)
+				q.EventTime = q.EventTime.Add(elapsed)
+			}
 			for _, candidate := range engine.Process(q) {
 				signals <- candidate
 			}
@@ -230,10 +241,14 @@ func TestFeedStartupAndReconnectProduceFreshSignals(t *testing.T) {
 	if err != context.Canceled || received != 4 || connections.Load() != 2 {
 		t.Fatalf("feed failed to start/reconnect: error=%v quotes=%d connections=%d", err, received, connections.Load())
 	}
-	if len(signals) != 2 {
-		t.Fatalf("missing signals or prices bridged a gap: %d signals", len(signals))
+	want := 1
+	if elapsed >= 5*time.Minute {
+		want = 2
 	}
-	for range 2 {
+	if len(signals) != want {
+		t.Fatalf("wanted %d signals across reconnect, got %d", want, len(signals))
+	}
+	for range want {
 		candidate := <-signals
 		if candidate.Direction != "down" || candidate.ChangePercent < -6.01 || candidate.ChangePercent > -5.99 {
 			t.Fatalf("signal used stale prices: %+v", candidate)

@@ -16,6 +16,8 @@ vi.mock('@wailsio/runtime', () => ({
 
 function alert(id: number, status = 'pending'): Alert {
   return {
+    bannerSeconds: -1,
+  openExchanges: [],
     receivedAtMs: 1, detectedAtMs: 1, writeStartedAtMs: 1,
     id, ruleId: 1, ruleName: 'knife', symbol: `COIN${id}USDT`, direction: 'down',
     changePercent: -10, price: 90, spreadPercent: .01, quoteVolume: 100_000_000,

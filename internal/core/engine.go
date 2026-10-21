@@ -35,21 +35,21 @@ func (s *symbolState) resetHistory() {
 }
 
 type Engine struct {
-	mu       sync.Mutex
-	rules    []Rule
-	settings Settings
-	volumes  map[string]float64
-	symbols  map[string]*symbolState
+	mu      sync.Mutex
+	rules   []Rule
+	volumes map[string]float64
+	symbols map[string]*symbolState
 }
 
-func NewEngine(rules []Rule, settings Settings) *Engine {
+func NewEngine(rules []Rule) *Engine {
 	return &Engine{
-		rules: append([]Rule(nil), rules...), settings: settings,
+		rules:   priceRules(rules),
 		volumes: make(map[string]float64), symbols: make(map[string]*symbolState),
 	}
 }
 
-func (e *Engine) Configure(rules []Rule, settings Settings) {
+func (e *Engine) Configure(rules []Rule) {
+	rules = priceRules(rules)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	previous := make(map[int64]Rule, len(e.rules))
@@ -76,8 +76,7 @@ func (e *Engine) Configure(rules []Rule, settings Settings) {
 			}
 		}
 	}
-	e.rules = append([]Rule(nil), rules...)
-	e.settings = settings
+	e.rules = rules
 }
 
 func (e *Engine) SetVolumes(volumes map[string]float64) {
@@ -206,7 +205,7 @@ func (e *Engine) Process(q Quote) []Candidate {
 		default:
 			continue
 		}
-		previousState.cooldown = q.Received.Add(time.Duration(e.settings.CooldownSeconds) * time.Second)
+		previousState.cooldown = q.Received.Add(time.Duration(rule.WindowSeconds) * time.Second)
 		candidates = append(candidates, Candidate{
 			Detected: time.Now(), Expires: q.Received.Add(10*time.Second - age),
 			Rule: rule, Symbol: q.Symbol, Direction: direction, ChangePercent: change,
@@ -221,8 +220,11 @@ func MinimumVolume(rules []Rule) float64 {
 	if len(rules) == 0 {
 		return math.Inf(1)
 	}
-	minimum := rules[0].MinQuoteVolume
-	for _, rule := range rules[1:] {
+	minimum := math.Inf(1)
+	for _, rule := range rules {
+		if rule.IsListing() {
+			continue
+		}
 		minimum = math.Min(minimum, rule.MinQuoteVolume)
 	}
 	return minimum

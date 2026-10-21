@@ -5,3 +5,4 @@ build/bin/
 *.syso
 *.log
 .DS_Store
+listings-source.json

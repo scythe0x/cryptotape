@@ -62,7 +62,7 @@ func TestSQLiteLockDoesNotBlockQuoteReader(t *testing.T) {
 }
 
 func TestCandidateOverflowRemainsVisibleAfterHealthyFeed(t *testing.T) {
-	c := &Controller{engine: core.NewEngine([]core.Rule{{ID: 1, Percent: 5, WindowSeconds: 300}}, core.DefaultSettings()), candidates: make(chan queuedCandidate, 1), pending: make(map[uint64]time.Time), emit: func(string, any) {}}
+	c := &Controller{engine: core.NewEngine([]core.Rule{{ID: 1, Percent: 5, WindowSeconds: 300}}), candidates: make(chan queuedCandidate, 1), pending: make(map[uint64]time.Time), emit: func(string, any) {}}
 	for _, symbol := range []string{"AAAUSDT", "BBBUSDT"} {
 		c.onQuote(marketQuote(symbol, 100, time.Now()))
 		c.onQuote(marketQuote(symbol, 94, time.Now()))

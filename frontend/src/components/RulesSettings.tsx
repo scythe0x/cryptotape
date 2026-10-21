@@ -5,6 +5,7 @@ import { RuleDialog } from './RuleDialog'
 import { AlertBadge } from './AlertBadge'
 import { useTranslation, soundLabel } from '../i18n'
 import { Button } from './ui'
+import { exchangeLabel } from '../listings'
 
 type Props = { rules: Rule[]; sounds: string[]; onSaved: () => void }
 
@@ -29,26 +30,43 @@ export function RulesSettings({ rules, sounds, onSaved }: Props) {
             <AlertBadge name={rule.name} color={rule.color} />
             <span className="rule-meta">
               <strong>
-                ±{rule.percent}% /{' '}
-                {rule.windowSeconds < 60
-                  ? `${rule.windowSeconds}${t('secondsShort')}`
-                  : `${rule.windowSeconds / 60}${t('minutesShort')}`}
+                {rule.kind === 'listing' ? (
+                  t('externalListingAlert')
+                ) : (
+                  <>
+                    ±{rule.percent}% /{' '}
+                    {rule.windowSeconds < 60
+                      ? `${rule.windowSeconds}${t('secondsShort')}`
+                      : `${rule.windowSeconds / 60}${t('minutesShort')}`}
+                  </>
+                )}
               </strong>
               <span>
-                $
-                {new Intl.NumberFormat(i18n.language, {
-                  notation: 'compact',
-                }).format(rule.minQuoteVolume)}{' '}
-                / {t('hours24')}
+                {rule.kind === 'listing' ? (
+                  rule.listingExchanges?.length ? (
+                    rule.listingExchanges.map(exchangeLabel).join(', ')
+                  ) : (
+                    t('allExternalExchanges')
+                  )
+                ) : (
+                  <>
+                    $
+                    {new Intl.NumberFormat(i18n.language, {
+                      notation: 'compact',
+                    }).format(rule.minQuoteVolume)}{' '}
+                    / {t('hours24')}
+                  </>
+                )}
               </span>
               <span>
-                {rule.sound.startsWith('custom:') ? t('customSound') : soundLabel(rule.sound)}
+                {soundLabel(rule.sound)}
                 {rule.sound !== 'none' && ` · ${Math.round(rule.volume * 100)}%`}
               </span>
             </span>
             {rule.terminals.length > 0 && (
               <span className="rule-terminals">
-                {rule.terminals.map((id) => (id === 'vataga' ? 'Vataga' : 'Tiger')).join(' · ')} · {t('auto')}
+                {rule.terminals.map((id) => (id === 'vataga' ? 'Vataga' : 'Tiger')).join(' · ')} ·{' '}
+                {t('auto')}
               </span>
             )}
           </button>
@@ -68,6 +86,7 @@ export function RulesSettings({ rules, sounds, onSaved }: Props) {
         open={editing}
         onOpenChange={setEditing}
         rule={selected}
+        rules={rules}
         sounds={sounds}
         onSaved={onSaved}
       />
