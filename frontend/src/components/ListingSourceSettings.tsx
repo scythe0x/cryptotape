@@ -70,7 +70,7 @@ export function ListingSourceSettings() {
           spellCheck={false}
           value={key}
           onChange={(event) => setKey(event.target.value)}
-          placeholder={source?.keyConfigured ? '********' : undefined}
+          placeholder={source?.keyConfigured ? '*'.repeat(50) : undefined}
           aria-describedby="listing-key-help"
         />
         <p className="muted" id="listing-key-help">

@@ -39,12 +39,11 @@ it('sorts by timestamp then id without mutating the feed', () => {
   expect(values.map((item) => item.id)).toEqual([10, 1, 2])
 })
 
-it('combines the badge and wrapping event and uses non-interactive headings', () => {
+it('combines the badge and wrapping event without a column heading row', () => {
   const { container } = render(<AlertsTable alerts={[alert(1)]} rules={[]} hasMore={false} loadMore={vi.fn()} onError={vi.fn()} />)
   const event = container.querySelector('.feed-cell-event')
   expect(event?.textContent).toBe('soft move-3.01%')
-  expect(container.querySelectorAll('.feed-column-heading')).toHaveLength(4)
-  expect(container.querySelector('.table-header button')).toBeNull()
+  expect(container.querySelector('.table-header')).toBeNull()
   expect(container.querySelector('.table-row')?.getAttribute('data-index')).toBe('0')
   expect(backend.measure).toHaveBeenCalled()
   expect(screen.getByRole('region', { name: 'alert history' }).getAttribute('tabindex')).toBe('0')
@@ -61,7 +60,7 @@ it('shows a listing event followed by its exchange', () => {
 it('respects ordered columns, including an entirely hidden table', () => {
   const props = { alerts: [alert(1)], rules: [], hasMore: false, loadMore: vi.fn(), onError: vi.fn() }
   const { container, rerender } = render(<AlertsTable {...props} columns={['event', 'time']} />)
-  expect([...container.querySelectorAll('.feed-column-heading')].map((node) => node.textContent)).toEqual(['event', 'time'])
+  expect([...container.querySelectorAll('.table-row > .table-cell')].map((node) => node.className)).toEqual(['table-cell feed-cell-event', 'table-cell feed-cell-time'])
   expect(container.querySelector('.feed-cell-ticker')).toBeNull()
   rerender(<AlertsTable {...props} columns={[]} />)
   expect(container.querySelector('.table-row')).toBeNull()
@@ -118,4 +117,20 @@ it('reports a failed column save without hiding the previous selection', async (
   fireEvent.keyDown(screen.getByRole('button', { name: 'ticker' }), { key: 'ArrowDown' })
   await waitFor(() => expect(onError).toHaveBeenCalledWith('Error: disk full'))
   expect(within(screen.getByRole('group', { name: 'active columns' })).getAllByRole('button')).toHaveLength(4)
+})
+
+
+it('shows the copy confirmation only on the clicked alert when tickers repeat', async () => {
+  const copy = vi.spyOn((await import('./api')).desktop, 'copySymbol').mockResolvedValue(undefined)
+  const { container } = render(<AlertsTable alerts={[alert(2), alert(1)]} rules={[]} hasMore={false} loadMore={vi.fn()} onError={vi.fn()} />)
+  const buttons = screen.getAllByTitle('copy BTCUSDT')
+  fireEvent.click(buttons[0])
+  await waitFor(() => expect(container.querySelectorAll('[aria-label="copied"]')).toHaveLength(1))
+  expect(buttons[0].querySelector('[aria-label="copied"]')).toBeTruthy()
+  expect(buttons[1].querySelector('[aria-label="copied"]')).toBeNull()
+  fireEvent.click(buttons[1])
+  await waitFor(() => expect(buttons[1].querySelector('[aria-label="copied"]')).toBeTruthy())
+  expect(buttons[0].querySelector('[aria-label="copied"]')).toBeNull()
+  expect(copy).toHaveBeenCalledTimes(2)
+  copy.mockRestore()
 })

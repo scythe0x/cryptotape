@@ -33,16 +33,16 @@ afterEach(() => {
 })
 
 describe('market crash presentation', () => {
-  it.each([1, 3, 5, 10, 15, 1500])('keeps the newest three of %d notifications', (count) => {
+  it.each([1, 3, 5, 10, 15, 1500])('keeps the newest five of %d notifications', (count) => {
     const incoming = Array.from({ length: count }, (_, index) => alert(index + 1))
     const cards = notificationCards([], incoming)
-    expect(cards.map((card) => card.id)).toEqual(incoming.slice(-3).map((card) => card.id))
+    expect(cards.map((card) => card.id)).toEqual(incoming.slice(-5).map((card) => card.id))
     expect(mergeAlerts([], incoming)).toHaveLength(count)
   })
 
   it('handles out-of-order and duplicate notification events', () => {
     expect(notificationCards([alert(20), alert(21)], [alert(19), alert(21), alert(22)]).map((card) => card.id))
-      .toEqual([20, 21, 22])
+      .toEqual([19, 20, 21, 22])
   })
 
   it.each(['pending', 'skipped'])('keeps terminal results when delayed %s events arrive', (status) => {

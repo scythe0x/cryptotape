@@ -32,17 +32,17 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError, columns
   const { t } = useTranslation()
   const [pausedAt, setPausedAt] = useState<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [copied, setCopied] = useState('')
+  const [copied, setCopied] = useState<{ id: number } | null>(null)
   useEffect(() => {
     if (!copied) return
-    const timer = window.setTimeout(() => setCopied(''), 1200)
+    const timer = window.setTimeout(() => setCopied(null), 1200)
     return () => window.clearTimeout(timer)
   }, [copied])
 
-  const copy = useCallback(async (symbol: string) => {
+  const copy = useCallback(async (alert: Alert) => {
     try {
-      await desktop.copySymbol(symbol)
-      setCopied(symbol)
+      await desktop.copySymbol(alert.symbol)
+      setCopied({ id: alert.id })
     } catch (error) {
       onError(String(error))
     }
@@ -69,12 +69,6 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError, columns
   const unseen = pausedAt === null ? 0 : alerts.filter((alert) => alert.id > pausedAt).length
   const gridTemplateColumns = tableGridTemplate(columns)
   const minimumWidth = tableMinimumWidth(columns)
-  const headers: Record<TableColumnID, string> = {
-    time: t('time'),
-    ticker: t('ticker'),
-    event: t('alertEvent'),
-    terminals: t('terminal'),
-  }
 
   function onScroll() {
     const element = scrollRef.current
@@ -99,9 +93,9 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError, columns
           <button
             className="ticker-button"
             title={t('copySymbol', { symbol: alert.symbol })}
-            onClick={() => void copy(alert.symbol)}
+            onClick={() => void copy(alert)}
           >
-            {copied === alert.symbol ? <Check size={12} /> : <ExchangeIcon exchange={alert.listing?.exchange ?? 'binance'} />}
+            {copied?.id === alert.id ? <Check size={12} aria-label={t('copied')} /> : <ExchangeIcon exchange={alert.listing?.exchange ?? 'binance'} />}
             <strong><Ticker symbol={alert.symbol} /></strong>
           </button>
         )
@@ -132,13 +126,6 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError, columns
       className="feed-panel measured-feed"
       style={{ minWidth: minimumWidth, '--table-row-min-height': `${minimumTableRowHeight}px` } as CSSProperties}
     >
-      {columns.length > 0 && (
-        <div className="table-header" data-window-table-header style={{ gridTemplateColumns }}>
-          {columns.map((column) => (
-            <div key={column} data-column-id={column} className="feed-column-heading">{headers[column]}</div>
-          ))}
-        </div>
-      )}
       <ScrollArea
         className="table-scroll-area"
         viewportClassName="table-scroll"

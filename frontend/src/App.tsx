@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Columns3, Settings2 } from 'lucide-react'
+import { Settings2 } from 'lucide-react'
 import { desktop, events } from './api'
+import { WindowTitleBar } from './components/WindowTitleBar'
 import { SoundToggle } from './components/SoundToggle'
 import { ConnectionStatus } from './components/ConnectionStatus'
 import { AlertsTable } from './components/AlertsTable'
@@ -99,19 +100,11 @@ export function App() {
 
   return (
     <main className="app-shell" ref={shellRef}>
-      <div className="connection-bar" data-window-toolbar>
-        <ConnectionStatus health={health} />
-        <div className="connection-actions">
+      <WindowTitleBar
+        status={<ConnectionStatus health={health} />}
+        onError={setError}
+        actions={<>
           <SoundToggle settings={settings} onError={setError} />
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label={t('tableColumns')}
-            title={t('tableColumns')}
-            onClick={() => openSettings('columns')}
-          >
-            <Columns3 size={15} />
-          </Button>
           <Button
             size="icon"
             variant="ghost"
@@ -121,8 +114,8 @@ export function App() {
           >
             <Settings2 size={15} />
           </Button>
-        </div>
-      </div>
+        </>}
+      />
       {error && (
         <div className="error-banner" title={error} onClick={() => setError('')}>
           {localizeDiagnostic(error)}

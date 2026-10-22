@@ -68,12 +68,12 @@ func main() {
 	}
 	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name: "main", Title: "Mythra", Width: 440, Height: 740, Hidden: runtime.GOOS == "windows",
-		URL: "/",
+		URL: "/", Frameless: true,
 	})
 	service.mainWindow = mainWindow
 	settingsWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name: "settings", Title: "Mythra settings", Width: 520, Height: 720,
-		MinWidth: 360, MinHeight: 240, Hidden: true, URL: "/?settings=1",
+		MinWidth: 360, MinHeight: 240, Hidden: true, URL: "/?settings=1", Frameless: true,
 	})
 	service.settingsWindow = settingsWindow
 	settingsWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {

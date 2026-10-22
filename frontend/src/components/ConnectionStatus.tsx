@@ -4,7 +4,7 @@ import { useTranslation } from '../i18n'
 import { localizeDiagnostic } from '../i18n/diagnostics'
 import { desktop } from '../api'
 import { Button } from './ui'
-import { RotateCw, Wifi } from 'lucide-react'
+import { LoaderCircle, RotateCw } from 'lucide-react'
 import { useState } from 'react'
 
 export function ConnectionStatus({ health }: { health: Health | null }) {
@@ -14,31 +14,30 @@ export function ConnectionStatus({ health }: { health: Health | null }) {
   const ping = online ? health.pingMs : null
   const connecting = !health || ['starting', 'connecting', 'reconnecting'].includes(health.state)
   const state = online ? latencyState(ping) : connecting ? 'warning' : 'offline'
+  const description = online
+    ? localizeDiagnostic(health.detail)
+    : connecting
+      ? t(health?.viaProxy ? 'proxyConnecting' : 'binanceConnecting')
+      : t(health?.viaProxy ? 'proxyUnavailable' : 'binanceDisconnected')
 
   return (
     <div
       className={`connection-status latency-${state}`}
       role="status"
-      title={`${health ? localizeDiagnostic(health.detail) : t('connecting')} · ${t('pingDescription')}: ${health?.pingMs ?? '—'} ms · ${t('quoteAge')}: ${health?.quoteAgeMs ?? '—'} ms${health?.serviceError ? ` · ${health.serviceError}` : ''}`}
+      title={`${description} · ${t('pingDescription')}: ${health?.pingMs ?? '—'} ms · ${t('quoteAge')}: ${health?.quoteAgeMs ?? '—'} ms${health?.serviceError ? ` · ${health.serviceError}` : ''}`}
     >
-      <Wifi size={14} aria-hidden="true" />
-      {online ? (
-        <span className="connection-ping">
-          {ping === null ? '—' : ping}<span> {t('ms')}</span>
-        </span>
-      ) : (
-        <span className="connection-label">
-          {t(connecting
-            ? health?.viaProxy ? 'proxyConnecting' : 'binanceConnecting'
-            : health?.viaProxy ? 'proxyUnavailable' : 'binanceDisconnected')}
-        </span>
-      )}
+      <span className="connection-ping">
+        {connecting || (online && ping === null)
+          ? <LoaderCircle className="connection-spinner" size={12} aria-label={t('connecting')} />
+          : online ? ping : '—'}
+        <span> {t('ms')}</span>
+      </span>
       {health?.storage.error && (
         <span className="connection-action-error" title={`${health.storage.error} · ${health.storage.unsaved}`}>
           ! {health.storage.unsaved}
         </span>
       )}
-      {(!online || health?.state === 'degraded') && (
+      {((!online && !connecting) || health?.state === 'degraded') && (
         <Button
           type="button"
           variant="ghost"

@@ -37,7 +37,7 @@ it('shows saved key, masks replacement and removes status after clearing', async
   await screen.findByText('key saved')
   const input = screen.getByLabelText('API key')
   expect(input.getAttribute('type')).toBe('password')
-  expect(input.getAttribute('placeholder')).toBe('********')
+  expect(input.getAttribute('placeholder')).toBe('*'.repeat(50))
   fireEvent.change(input, { target: { value: 'secret-value' } })
   fireEvent.click(screen.getByRole('button', { name: 'save' }))
   await waitFor(() => expect(save).toHaveBeenCalledWith('wss://ws.newlistings.pro/v2/full', 'secret-value'))

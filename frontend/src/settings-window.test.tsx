@@ -7,6 +7,7 @@ import { SettingsWindow } from './SettingsWindow'
 
 const backend = vi.hoisted(() => ({ listeners: new Map<string, (event: { data: unknown }) => void>() }))
 vi.mock('@wailsio/runtime', () => ({
+  Window: { IsMaximised: vi.fn().mockResolvedValue(false) },
   Call: { ByName: vi.fn() }, Clipboard: { SetText: vi.fn() }, Browser: { OpenURL: vi.fn() },
   Events: {
     On: (name: string, handle: (event: { data: unknown }) => void) => {
@@ -50,7 +51,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it('loads standalone settings and hides the native window after saving', async () => {
+it('loads standalone settings and hides the settings window after saving', async () => {
   const alertsAfter = vi.spyOn(desktop, 'alertsAfter')
   const sessionAlerts = vi.spyOn(desktop, 'sessionAlerts')
   render(<SettingsWindow />)
@@ -124,4 +125,26 @@ it('keeps live settings delivered while an opening snapshot is pending', async (
   await act(async () => { pending.resolve(snapshot) })
   expect(await screen.findByRole('region', { name: 'columns' })).toBeTruthy()
   expect(screen.getByRole('group', { name: 'active columns' }).querySelectorAll('button')).toHaveLength(1)
+})
+
+it('keeps window controls available while settings are loading', async () => {
+  vi.spyOn(desktop, 'snapshot').mockReturnValue(new Promise<Snapshot>(() => {}))
+  const hide = vi.spyOn(desktop, 'hideSettings').mockResolvedValue(undefined)
+  render(<SettingsWindow />)
+  expect(screen.getByRole('tablist').closest('[data-window-toolbar]')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'close' }))
+  await waitFor(() => expect(hide).toHaveBeenCalledOnce())
+})
+
+it('places all settings tabs and the single close button in the title bar', async () => {
+  render(<SettingsWindow />)
+  await screen.findByRole('spinbutton', { name: 'Tiger port' })
+  const toolbar = screen.getByRole('tablist').closest('[data-window-toolbar]')
+  expect(toolbar?.querySelectorAll('[role="tab"]')).toHaveLength(5)
+  expect(screen.getByRole('button', { name: 'close' }).closest('[data-window-toolbar]')).toBe(toolbar)
+  expect(screen.getAllByRole('button', { name: 'close' })).toHaveLength(1)
+  fireEvent.mouseDown(screen.getByRole('tab', { name: 'columns' }), { button: 0, ctrlKey: false })
+  expect(await screen.findByRole('region', { name: 'columns' })).toBeTruthy()
+  fireEvent.mouseDown(screen.getByRole('tab', { name: 'general' }), { button: 0, ctrlKey: false })
+  expect(await screen.findByRole('spinbutton', { name: 'Tiger port' })).toBeTruthy()
 })

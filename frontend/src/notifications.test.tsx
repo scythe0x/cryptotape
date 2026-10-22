@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import * as Tabs from '@radix-ui/react-tabs'
 import { applyLanguage } from './i18n'
 import type { Alert, Rule, Snapshot, TableColumnID } from './api'
 import { Overlay } from './Overlay'
@@ -242,14 +243,16 @@ it('saves the language preference in settings', async () => {
     if (name.endsWith('.Monitors')) return []
   })
   render(
-    <SettingsContent
-      section="alerts"
-      onClose={vi.fn()}
-      settings={settings}
-      rules={[]}
-      sounds={['chime']}
-      onSaved={vi.fn()}
-    />,
+    <Tabs.Root defaultValue="alerts">
+      <Tabs.List><Tabs.Trigger value="general">general</Tabs.Trigger></Tabs.List>
+      <SettingsContent
+        onClose={vi.fn()}
+        settings={settings}
+        rules={[]}
+        sounds={['chime']}
+        onSaved={vi.fn()}
+      />
+    </Tabs.Root>,
   )
   await userEvent.click(screen.getByRole('tab', { name: 'general' }))
   expect(screen.queryByRole('spinbutton', { name: /cooldown/i })).toBeNull()
@@ -325,10 +328,13 @@ it('shows clear colored connection states without a warmup message', () => {
   applyLanguage('ru')
   const health = initialSnapshot().health
   const { rerender } = render(<ConnectionStatus health={{ ...health, state: 'error' }} />)
-  expect(screen.getByRole('status').textContent).toBe('нет соединения с Binance')
+  expect(screen.getByRole('status').textContent).toBe('— мс')
+  expect(screen.getByRole('status').title).toContain('нет соединения с Binance')
   expect(screen.getByRole('status').className).toContain('latency-offline')
   rerender(<ConnectionStatus health={{ ...health, state: 'reconnecting' }} />)
-  expect(screen.getByRole('status').textContent).toBe('подключение к Binance')
+  expect(screen.getByRole('status').textContent?.trim()).toBe('мс')
+  expect(screen.getByRole('status').querySelector('.connection-spinner')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'переподключить' })).toBeNull()
   expect(screen.getByRole('status').className).toContain('latency-warning')
   rerender(<ConnectionStatus health={{ ...health, state: 'warming' }} />)
   expect(screen.getByRole('status').textContent).toBe('50 мс')
@@ -395,7 +401,7 @@ it('requires confirmation before deleting a rule', async () => {
   expect(backend.call).toHaveBeenCalledWith('main.DesktopService.DeleteRule', rule.id)
 })
 
-it('renders new event notifications and retains only three during a burst', async () => {
+it('renders new event notifications and retains only five during a burst', async () => {
   backend.call.mockImplementation(async (name: string) => {
     if (name.endsWith('.GetSnapshot')) return initialSnapshot()
     if (name.endsWith('.SessionAlerts')) return []
@@ -407,8 +413,8 @@ it('renders new event notifications and retains only three during a burst', asyn
       backend.listeners.get('alert:new')?.({ data: { ...alert, id, symbol: `COIN${id}USDT` } })
     }
   })
-  await waitFor(() => expect(screen.getAllByRole('button', { name: /open COIN/ })).toHaveLength(3))
-  for (const id of [13, 14, 15])
+  await waitFor(() => expect(screen.getAllByRole('button', { name: /open COIN/ })).toHaveLength(5))
+  for (const id of [11, 12, 13, 14, 15])
     expect(screen.getByRole('button', { name: `open COIN${id}USDT in terminal` })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'open COIN1USDT in terminal' })).toBeNull()
 })
@@ -512,7 +518,7 @@ it('offers manual reconnect for both exchange and proxy failures', async () => {
   await user.click(screen.getByRole('button', { name: 'reconnect' }))
   expect(backend.call).toHaveBeenCalledWith('main.DesktopService.Reconnect')
   rerender(<ConnectionStatus health={{ ...initialSnapshot().health, state: 'error', viaProxy: true }} />)
-  expect(screen.getByText('proxy connection unavailable')).toBeTruthy()
+  expect(screen.getByRole('status').title).toContain('proxy connection unavailable')
   expect(screen.getByRole('button', { name: 'reconnect' })).toBeTruthy()
 })
 
@@ -676,7 +682,7 @@ it('configures the listing source without reading a saved key into the form', as
   })
   render(<ListingSourceSettings />)
   await screen.findByText('key saved')
-  expect(screen.getByPlaceholderText('********')).toBeTruthy()
+  expect(screen.getByPlaceholderText('*'.repeat(50))).toBeTruthy()
   expect(screen.queryByRole('combobox')).toBeNull()
   expect(screen.queryByText(/feed_free/)).toBeNull()
   const bot = screen.getByRole('link', { name: '@NLF_websocket_bot' })
@@ -714,7 +720,10 @@ it('saves banner visibility independently of sound in general settings', async (
   const { SettingsContent } = await import('./components/SettingsContent')
   const settings = { ...initialSnapshot().settings, soundMuted: true }
   backend.call.mockResolvedValue([])
-  render(<SettingsContent section="alerts" onClose={vi.fn()} settings={settings} rules={[]} sounds={[]} onSaved={vi.fn()} />)
+  render(<Tabs.Root defaultValue="alerts">
+    <Tabs.List><Tabs.Trigger value="general">general</Tabs.Trigger></Tabs.List>
+    <SettingsContent onClose={vi.fn()} settings={settings} rules={[]} sounds={[]} onSaved={vi.fn()} />
+  </Tabs.Root>)
   await userEvent.click(screen.getByRole('tab', { name: 'general' }))
   const checkbox = screen.getByRole('checkbox', { name: 'show notifications in the corner of the screen' })
   expect(checkbox.matches(':checked')).toBe(true)

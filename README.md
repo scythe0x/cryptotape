@@ -2,6 +2,10 @@
 
 windows 11 screener for first-crossing Binance USDⓈ-M futures alerts. the Go market engine runs independently of the Wails UI. alert rules, settings, and the alert log live in SQLite.
 
+## windows
+
+all application windows use custom chrome (`Frameless: true`). use `WindowTitleBar` for regular windows; keep activation and alert overlays frameless as well. do not introduce native title bars or native dialog windows. settings close hides the window; main close quits the application.
+
 ## run and build
 
 requires Go 1.26.1, Node.js 22+, and [Wails 3 CLI](https://v3.wails.io/getting-started/installation/). Windows also needs the WebView2 runtime.

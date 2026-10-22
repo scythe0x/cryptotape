@@ -86,6 +86,7 @@ export function useMainWindowMinimum(
     if (toolbar) mutationObserver.observe(toolbar, { childList: true, subtree: true, characterData: true })
     window.addEventListener('resize', schedule)
     observeLayout()
+    void document.fonts?.ready.then(() => { if (!stopped) schedule() })
     return () => {
       stopped = true
       window.cancelAnimationFrame(frame)

@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { desktop, events, type Rule, type Settings, type SettingsSession } from './api'
-import { applyLanguage } from './i18n'
+import * as Tabs from '@radix-ui/react-tabs'
+import { desktop, events, type Rule, type Settings, type SettingsSession, settingsSectionSchema, type SettingsSection } from './api'
+import { WindowTitleBar } from './components/WindowTitleBar'
+import { useTranslation, applyLanguage } from './i18n'
 import { localizeDiagnostic } from './i18n/diagnostics'
 import { SettingsContent } from './components/SettingsContent'
 
 export function SettingsWindow() {
+  const { t } = useTranslation()
   const [settings, setSettings] = useState<Settings | null>(null)
   const [rules, setRules] = useState<Rule[]>([])
   const [sounds, setSounds] = useState<string[]>([])
   const [session, setSession] = useState<SettingsSession | null>(null)
   const [error, setError] = useState('')
+  const [tab, setTab] = useState<SettingsSection>('alerts')
   const reload = useRef<() => void>(() => {})
 
   useEffect(() => {
@@ -31,7 +35,10 @@ export function SettingsWindow() {
           if (rulesVersion === startedRulesVersion) setRules(snapshot.rules)
           if (settingsVersion === startedSettingsVersion) setSettings(snapshot.settings)
           if (soundsVersion === startedSoundsVersion) setSounds(soundIds)
-          if (opening) setSession(opening)
+          if (opening) {
+            setTab(opening.section)
+            setSession(opening)
+          }
           setError('')
         })
         .catch((cause: unknown) => {
@@ -71,22 +78,26 @@ export function SettingsWindow() {
     void desktop.hideSettings().catch((cause: unknown) => setError(String(cause)))
   }
 
-  if (!settings || !session) {
-    return error ? <div className="inline-error settings-window-message" role="alert">{localizeDiagnostic(error)}</div> : null
-  }
-
   return (
-    <>
-      <SettingsContent
+    <Tabs.Root className="settings-window-shell" value={tab} onValueChange={(value) => setTab(settingsSectionSchema.parse(value))}>
+      <WindowTitleBar onClose={close} onError={setError} navigation={
+        <Tabs.List className="settings-tabs" aria-label={t('settingsSections')}>
+          <Tabs.Trigger value="alerts">{t('alerts')}</Tabs.Trigger>
+          <Tabs.Trigger value="proxies">{t('proxies')}</Tabs.Trigger>
+          <Tabs.Trigger value="listings">{t('listingsSource')}</Tabs.Trigger>
+          <Tabs.Trigger value="general">{t('general')}</Tabs.Trigger>
+          <Tabs.Trigger value="columns">{t('tableColumns')}</Tabs.Trigger>
+        </Tabs.List>
+      } />
+      {settings && session && <SettingsContent
         key={session.revision}
-        section={session.section}
         settings={settings}
         rules={rules}
         sounds={sounds}
         onSaved={() => reload.current()}
         onClose={close}
-      />
+      />}
       {error && <div className="inline-error settings-window-error" role="alert">{localizeDiagnostic(error)}</div>}
-    </>
+    </Tabs.Root>
   )
 }

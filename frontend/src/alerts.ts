@@ -18,5 +18,5 @@ export function mergeAlerts(current: Alert[], incoming: Alert[], updates: AlertU
 }
 
 export function notificationCards(current: Alert[], incoming: Alert[]): Alert[] {
-  return mergeAlerts(current, incoming).slice(0, 3).reverse()
+  return mergeAlerts(current, incoming).slice(0, 5).reverse()
 }

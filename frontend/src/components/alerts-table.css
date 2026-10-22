@@ -1,5 +1,3 @@
-.measured-feed .table-header { scrollbar-gutter: auto; }
-.feed-column-heading { display: flex; align-items: center; min-width: 0; padding: 0 6px; color: #878787; text-transform: uppercase; font-size: 9px; font-weight: 700; letter-spacing: .04em; white-space: nowrap; overflow: hidden; }
 .measured-feed .table-scroll-area { flex: 1 1 0; min-height: 0; min-width: 0; width: 100%; }
 .measured-feed .table-scroll { overflow-anchor: none; scrollbar-gutter: auto; min-width: 0; max-width: 100%; }
 .measured-feed .table-row { height: auto; min-height: var(--table-row-min-height); padding: 7px 0; }
@@ -12,3 +10,6 @@
 .measured-feed .virtual-body { width: 100%; min-width: 0; }
 .measured-feed .scroll-viewport > div { display: block !important; width: 100%; }
 .measured-feed { min-width: 0; width: 100%; }
+
+/* keep the window edge free of scrollbar hit targets; wheel and keyboard scrolling remain available. */
+.measured-feed .scroll-bar { display: none; }
