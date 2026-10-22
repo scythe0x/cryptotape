@@ -12,7 +12,7 @@ tasks:
   build:mac:
     deps: [frontend]
     cmds:
-      - go build -tags production,private_mac_apis -trimpath -o build/bin/cryptotape .
+      - go build -tags production,private_mac_apis -trimpath -o build/bin/Mythra .
 
   frontend:
     dir: frontend
@@ -26,13 +26,9 @@ tasks:
       - task: build:windows:binary
 
   build:windows:binary:
-    env:
-      GOOS: windows
-      GOARCH: amd64
-      CGO_ENABLED: '0'
     cmds:
       - wails3 generate syso -arch amd64 -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out wails_windows_amd64.syso
-      - go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" -o build/bin/cryptotape.exe .
+      - go run ./cmd/build-windows
 
   check:
     cmds:

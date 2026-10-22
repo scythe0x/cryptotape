@@ -36,14 +36,16 @@ func (c *Controller) startTerminals() {
 					c.terminalWaitMs.Store(time.Since(job.queued).Milliseconds())
 					status := "ok"
 					var err error
-					if !time.Now().Before(job.expires) {
+					if !c.actionsAllowed() {
+						status, err = "cancelled", context.Canceled
+					} else if !time.Now().Before(job.expires) {
 						status, err = "stale", errors.New("terminal command expired in queue")
 					} else {
 						deadline := time.Now().Add(1500 * time.Millisecond)
 						if job.expires.Before(deadline) {
 							deadline = job.expires
 						}
-						ctx, cancel := context.WithDeadline(context.Background(), deadline)
+						ctx, cancel := context.WithDeadline(c.actionContext(), deadline)
 						started := time.Now()
 						exchanges := c.currentOpenExchanges(job.ruleID, job.exchanges)
 						if len(exchanges) == 0 && job.automatic {

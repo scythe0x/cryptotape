@@ -1,4 +1,4 @@
-# cryptotape
+# Mythra
 
 windows 11 screener for first-crossing Binance USDⓈ-M futures alerts. the Go market engine runs independently of the Wails UI. alert rules, settings, and the alert log live in SQLite.
 
@@ -21,23 +21,25 @@ wails3 task check
 wails3 task build:windows
 ```
 
-the second command writes `build/bin/cryptotape.exe`. all frontend assets and built-in sounds are embedded; no files need to sit beside the executable. windows requires WebView2 runtime. cross-compiling on macos does not verify native windows behavior.
+the second command writes `build/bin/Mythra.exe`. all frontend assets and built-in sounds are embedded; no files need to sit beside the executable. windows requires WebView2 runtime. cross-compiling on macos does not verify native windows behavior.
 
 ## releases and updates
 
-pushing a version tag such as `v0.1.6` runs `.github/workflows/release.yml`: frontend/backend checks, a windows build and publication of `cryptotape.exe`. a normal branch push runs checks only; it does not publish a release. publication happens only after the tagged revision passes its checks and builds successfully.
+the public windows download is [scalping.mythra.pw/download](https://scalping.mythra.pw/download). successful releases atomically replace the executable on the download server after publishing it to the private github repository.
+
+pushing a version tag such as `v0.1.6` runs `.github/workflows/release.yml`: frontend/backend checks, a windows build and publication of `Mythra.exe`. a normal branch push runs checks only; it does not publish a release. publication happens only after the tagged revision passes its checks and builds successfully.
 
 for the next release, update `frontend/package.json` and its lockfile with `npm --prefix frontend version 0.1.6 --no-git-tag-version`, then set both version fields in `build/windows/info.json` to `0.1.6`. commit and push those changes before tagging that commit:
 
 ```sh
 git push origin main
-git tag -a v0.1.6 -m "cryptotape v0.1.6"
+git tag -a v0.1.6 -m "Mythra v0.1.6"
 git push origin v0.1.6
 ```
 
 use a new matching version each time. the release workflow rejects a tag that differs from the application versions; a failed run does not publish a release.
 
-download the exe and run it. to update, close cryptotape and replace the old exe. settings, history and imported sounds live separately in `%APPDATA%\cryptotape` and survive replacement or relocation of the executable for the same windows user. there is no installer or in-app automatic updater.
+download the exe and run it. to update, close Mythra and replace the old exe. settings, history and imported sounds live separately in `%APPDATA%\cryptotape` and survive replacement or relocation of the executable for the same windows user. there is no installer or in-app automatic updater.
 
 ## performance
 
@@ -68,7 +70,7 @@ each rule has a badge color, a volume from 0 to 100%, its own turnover floor, an
 
 the main window contains a compact internet icon and websocket round-trip ping in milliseconds, shown as the median of the last five successful measurements (available samples during startup; history resets on disconnect). worst price-stream quote age stays in the tooltip. the sound button beside settings is green when alert sounds are enabled and red when muted. general settings can disable corner notification banners independently of sound; banners default to enabled, and the alert feed always remains active. both preferences persist across restarts. diagnostics expose per-shard current age and a 30-second histogram p99 upper bound, REST snapshot age/errors, persistence backlog, terminal backlog and the latest 128 alert stage traces. frontend acknowledgements identify feed/overlay browser frames; they do not prove OS presentation latency. rule management lives in settings. bursts are batched per frame without discarding history; notifications retain the latest three cards. reading older alerts keeps the scroll position, with a button to jump to new ones. animations respect reduced-motion preferences.
 
-settings are stored in the user's application config directory (`cryptotape/cryptotape.sqlite`), with imported sounds alongside it. the proxy settings tab stores named profiles with host, port and optional credentials. the protocol is inferred: local unauthenticated proxies use SOCKS5, authenticated upstream proxies use HTTP CONNECT. direct routing is selected by default; a new profile is activated only when its checked-by-default "use this proxy" checkbox is left checked. saving an inactive profile does not change the selected route. selected proxies apply to both Binance REST and websocket traffic; terminal requests stay direct. there is no automatic direct-route fallback. a shadowsocks client can expose its local SOCKS5 port; raw shadowsocks encrypted endpoints are not supported by an ip/port alone.
+the application is named Mythra; the existing `cryptotape` data directory is retained so upgrades preserve settings and history. settings are stored in the user's application config directory (`cryptotape/cryptotape.sqlite`), with imported sounds alongside it. the proxy settings tab stores named profiles with host, port and optional credentials. the protocol is inferred: local unauthenticated proxies use SOCKS5, authenticated upstream proxies use HTTP CONNECT. direct routing is selected by default; a new profile is activated only when its checked-by-default "use this proxy" checkbox is left checked. saving an inactive profile does not change the selected route. selected proxies apply to both Binance REST and websocket traffic; terminal requests stay direct. there is no automatic direct-route fallback. a shadowsocks client can expose its local SOCKS5 port; raw shadowsocks encrypted endpoints are not supported by an ip/port alone.
 
 ## checks
 
@@ -120,3 +122,7 @@ go test ./internal/storage -run '^$' -bench BenchmarkDynamicPeakObservation -ben
 cd frontend
 VITE_DYNAMIC_AUDIT=1 npm test -- src/dynamic-audit.test.tsx
 ```
+
+## licensing
+
+windows builds require a key from [the mythra bot](https://t.me/mythrascalping_bot). see [licensing operations and protection limits](docs/licensing.md) for server administration, equipment binding, protected builds and the vpn port migration.

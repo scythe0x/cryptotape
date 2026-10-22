@@ -34,6 +34,7 @@ type Audio struct {
 	player  *oto.Player
 	latest  int64
 	muted   bool
+	blocked bool
 	sounds  map[string][]byte
 	dir     string
 }
@@ -172,7 +173,7 @@ func (a *Audio) play(id string, alertID int64, volume float64) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if alertID > 0 && (a.muted || alertID <= a.latest) {
+	if a.blocked || (alertID > 0 && (a.muted || alertID <= a.latest)) {
 		return nil
 	}
 	if alertID > 0 {
@@ -200,7 +201,7 @@ func (a *Audio) Warm() error {
 	if a.context == nil {
 		context, ready, err := oto.NewContext(&oto.NewContextOptions{
 			SampleRate: sampleRate, ChannelCount: 2, Format: oto.FormatSignedInt16LE,
-			BufferSize: 40 * time.Millisecond, ApplicationName: "cryptotape",
+			BufferSize: 40 * time.Millisecond, ApplicationName: "Mythra",
 		})
 		if err != nil {
 			return err
@@ -338,4 +339,13 @@ func synth(id string) []byte {
 		binary.LittleEndian.PutUint16(output[frame*4+2:], sample)
 	}
 	return output
+}
+
+func (a *Audio) Block(blocked bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.blocked = blocked
+	if blocked && a.player != nil {
+		a.player.Pause()
+	}
 }

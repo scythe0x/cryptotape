@@ -29,6 +29,12 @@ func validSettingsSection(section string) bool {
 }
 
 func (s *DesktopService) OpenSettings(section string) error {
+	s.runMu.RLock()
+	defer s.runMu.RUnlock()
+	if err := s.requireAccess(); err != nil {
+		return err
+	}
+
 	if !validSettingsSection(section) {
 		return errors.New("invalid settings section")
 	}
@@ -54,12 +60,24 @@ func (s *DesktopService) HideSettings() {
 }
 
 func (s *DesktopService) GetSettingsSession() SettingsSession {
+	s.runMu.RLock()
+	defer s.runMu.RUnlock()
+	if err := s.requireAccess(); err != nil {
+		return SettingsSession{}
+	}
+
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
 	return s.settingsSession
 }
 
 func (s *DesktopService) SetMainWindowMinimum(width, height, viewportWidth, viewportHeight int) error {
+	s.runMu.RLock()
+	defer s.runMu.RUnlock()
+	if err := s.requireAccess(); err != nil {
+		return err
+	}
+
 	if width <= 0 || height <= 0 || viewportWidth <= 0 || viewportHeight <= 0 ||
 		width > 65536 || height > 65536 || viewportWidth > 65536 || viewportHeight > 65536 {
 		return errors.New("invalid window minimum")

@@ -1,12 +1,16 @@
 {
-  "fixed": { "file_version": "0.1.8" },
+  "fixed": {
+    "file_version": "0.1.9"
+  },
   "info": {
     "0000": {
-      "ProductVersion": "0.1.8",
-      "CompanyName": "cryptotape",
-      "FileDescription": "fast Binance futures alerts",
-      "LegalCopyright": "cryptotape",
-      "ProductName": "cryptotape"
+      "ProductVersion": "0.1.9",
+      "CompanyName": "Mythra",
+      "FileDescription": "Mythra",
+      "LegalCopyright": "Mythra",
+      "ProductName": "Mythra",
+      "InternalName": "Mythra",
+      "OriginalFilename": "Mythra.exe"
     }
   }
 }

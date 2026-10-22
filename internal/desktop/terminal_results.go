@@ -30,7 +30,9 @@ func (c *Controller) startTerminalResults() {
 				c.terminalResultError(fmt.Errorf("save terminal status: %w", err), len(batch))
 			} else {
 				for _, update := range batch {
-					c.emit("alert:update", update)
+					if c.actionsAllowed() {
+						c.emit("alert:update", update)
+					}
 				}
 			}
 			for range batch {

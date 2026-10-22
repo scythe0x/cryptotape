@@ -19,6 +19,10 @@ import (
 type EventSink func(name string, data any)
 
 type Controller struct {
+	accessCheck        func() bool
+	blocked            atomic.Bool
+	actions            context.Context
+	actionCancel       context.CancelFunc
 	listingMu          sync.Mutex
 	listingRestartMu   sync.Mutex
 	listingConfig      listings.Config
@@ -119,6 +123,7 @@ func NewController(path string, emit EventSink) (*Controller, error) {
 	if len(latest) > 0 {
 		controller.launchID = latest[0].ID
 	}
+	controller.actions, controller.actionCancel = context.WithCancel(context.Background())
 	controller.startPipeline()
 	return controller, nil
 }
@@ -126,6 +131,12 @@ func NewController(path string, emit EventSink) (*Controller, error) {
 func (c *Controller) Start(ctx context.Context) {
 	c.mu.Lock()
 	c.root, c.stop = context.WithCancel(ctx)
+	if c.actionCancel != nil {
+		c.actionCancel()
+	}
+	c.actions, c.actionCancel = context.WithCancel(context.Background())
+	c.blocked.Store(false)
+	c.audio.Block(false)
 	c.mu.Unlock()
 	c.feedWG.Add(1)
 	go func() {
@@ -139,7 +150,14 @@ func (c *Controller) Start(ctx context.Context) {
 }
 
 func (c *Controller) Close() error {
-	c.closeOnce.Do(func() { c.closeError = c.close() })
+	c.closeOnce.Do(func() {
+		c.closeError = c.close()
+		c.mu.Lock()
+		if c.actionCancel != nil {
+			c.actionCancel()
+		}
+		c.mu.Unlock()
+	})
 	return c.closeError
 }
 
@@ -260,7 +278,7 @@ func (c *Controller) SessionAlerts() ([]core.Alert, error) {
 func (c *Controller) onQuote(quote core.Quote) {
 	c.pipelineMu.RLock()
 	defer c.pipelineMu.RUnlock()
-	if c.closing {
+	if c.closing || c.blocked.Load() {
 		return
 	}
 	for _, candidate := range c.engine.Process(quote) {

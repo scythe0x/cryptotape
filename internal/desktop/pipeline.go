@@ -49,13 +49,24 @@ func (c *Controller) startPipeline() {
 	go func() {
 		defer c.pipelineWG.Done()
 		for alert := range c.notifications {
-			c.emit("alert:new", alert)
+			if c.actionsAllowed() {
+				c.emit("alert:new", alert)
+			}
 			c.actionWG.Done()
 		}
 	}()
 }
 
 func (c *Controller) saveCandidates(batch []queuedCandidate) {
+	if !c.actionsAllowed() {
+		c.queueMu.Lock()
+		for _, job := range batch {
+			delete(c.pending, job.id)
+			c.actionWG.Done()
+		}
+		c.queueMu.Unlock()
+		return
+	}
 	candidates := make([]core.Candidate, len(batch))
 	for i, job := range batch {
 		candidates[i] = job.candidate
@@ -84,7 +95,7 @@ func (c *Controller) saveCandidates(batch []queuedCandidate) {
 		return
 	}
 	for i, alert := range alerts {
-		if alert.ID == 0 {
+		if alert.ID == 0 || !c.actionsAllowed() {
 			c.actionWG.Done()
 			continue
 		}

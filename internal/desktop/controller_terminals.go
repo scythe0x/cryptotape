@@ -25,7 +25,7 @@ func (c *Controller) OpenTerminal(id int64, symbol, terminal string) error {
 
 func (c *Controller) OpenTerminals(id int64, symbol string, terminals []string) OpenResult {
 	c.pipelineMu.RLock()
-	if c.closing {
+	if c.closing || !c.actionsAllowed() {
 		c.pipelineMu.RUnlock()
 		return OpenResult{Error: "controller closed"}
 	}
@@ -33,7 +33,7 @@ func (c *Controller) OpenTerminals(id int64, symbol string, terminals []string) 
 	c.pipelineMu.RUnlock()
 	defer c.actionWG.Done()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(c.actionContext(), 2*time.Second)
 	defer cancel()
 	exchanges := core.DefaultOpenExchanges()
 	var ruleID int64
@@ -64,11 +64,17 @@ func (c *Controller) OpenTerminals(id int64, symbol string, terminals []string) 
 }
 
 func (c *Controller) openInTerminal(ctx context.Context, symbol, terminal string, exchanges ...string) error {
+	if !c.actionsAllowed() || ctx.Err() != nil {
+		return context.Canceled
+	}
 	if len(exchanges) == 0 {
 		return errors.New("no enabled exchanges")
 	}
 	var unavailable []error
 	for _, exchange := range exchanges {
+		if !c.actionsAllowed() || ctx.Err() != nil {
+			return context.Canceled
+		}
 		var err error
 		switch terminal {
 		case "vataga":
@@ -112,7 +118,7 @@ func (c *Controller) openInTerminals(ctx context.Context, symbol string, termina
 		deadline = time.Now().Add(2 * time.Second)
 	}
 	c.pipelineMu.RLock()
-	if c.closing {
+	if c.closing || !c.actionsAllowed() {
 		c.pipelineMu.RUnlock()
 		return 0, errors.New("controller closed")
 	}

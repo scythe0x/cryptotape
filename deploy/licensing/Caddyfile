@@ -1,0 +1,16 @@
+scalping.mythra.pw {
+    @download path /download /download/ /Mythra.exe
+    handle @download {
+        root * /srv/mythra/releases
+        rewrite * /Mythra.exe
+        header Content-Disposition "attachment; filename=Mythra.exe"
+        header Cache-Control "no-store"
+        header X-Content-Type-Options "nosniff"
+        file_server
+    }
+    handle {
+        reverse_proxy 127.0.0.1:9087 {
+            header_up X-Real-IP {remote_host}
+        }
+    }
+}
