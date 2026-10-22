@@ -1,6 +1,6 @@
 # licensing and basic executable protection
 
-windows releases use go 1.26.10 and garble v0.17.0. internal application packages have identifier and literal obfuscation; the wails rpc surface remains stable. private obfuscation seeds are written to `build/private/` and retained separately from the public executable. this raises reverse engineering effort; it cannot prevent executable patching, reconstruction of algorithms, or extraction of embedded frontend assets. the deeper rea/ghidra audit was stopped at the owner's request in favor of possible server-side computation.
+windows releases use the standard go 1.26.10 compiler, without garble, string obfuscation or a packer. paths are trimmed and the executable uses the windows gui subsystem. this profile replaces the obfuscated v0.1.9 profile after antivirus detections were reported; removal of obfuscation is not a guarantee of zero detections. licensing and cryptographic checks remain unchanged. the deeper rea/ghidra audit was stopped at the owner's request in favor of possible server-side computation.
 
 ## access contract
 
@@ -75,4 +75,4 @@ the migration adds `admin_updates` and `bot_outbox` (schema version 2) without c
 
 caddy serves `/download`, `/download/` and `/Mythra.exe` from `/srv/mythra/releases/Mythra.exe`, with an attachment filename and caching disabled. license api routes keep using the local reverse proxy.
 
-after publishing a release, the release workflow downloads its `Mythra.exe` asset and uploads it over ssh as `mythra-release`. repository secrets `MYTHRA_RELEASE_SSH_KEY` and `MYTHRA_RELEASE_KNOWN_HOSTS` hold the deployment credential and pinned host key. the ssh key uses a forced command, `deploy/licensing/publish-release.py` installed as `/usr/local/bin/mythra-publish-release`; it cannot open a shell or forward ports. uploads are limited to 100 mib, checked for dos/pe signatures and atomically replace the public file. the workflow downloads the public url and compares its bytes with the github release asset.
+the release workflow first creates a draft for checking the exact executable. after publishing that draft, the download workflow downloads its `Mythra.exe` asset and uploads it over ssh as `mythra-release`. repository secrets `MYTHRA_RELEASE_SSH_KEY` and `MYTHRA_RELEASE_KNOWN_HOSTS` hold the deployment credential and pinned host key. the ssh key uses a forced command, `deploy/licensing/publish-release.py` installed as `/usr/local/bin/mythra-publish-release`; it cannot open a shell or forward ports. uploads are limited to 100 mib, checked for dos/pe signatures and atomically replace the public file. the workflow downloads the public url and compares its bytes with the github release asset.

@@ -1,0 +1,45 @@
+name: publish download
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  download-link:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: mythra-download-publication
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: download published executable
+        run: gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern Mythra.exe --dir release
+      - name: update public download
+        env:
+          DEPLOY_KEY: ${{ secrets.MYTHRA_RELEASE_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.MYTHRA_RELEASE_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          if [[ "$latest" != "$RELEASE_TAG" ]]; then
+            echo "a newer release is already published; keeping its download"
+            exit 0
+          fi
+          directory=$(mktemp -d)
+          trap 'rm -rf "$directory"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$directory/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$directory/known_hosts"
+          chmod 600 "$directory/key"
+          ssh -T -i "$directory/key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$directory/known_hosts" \
+            mythra-release@212.113.104.39 < release/Mythra.exe
+          curl --fail --silent --show-error --retry 3 \
+            https://scalping.mythra.pw/download --output "$directory/download.exe"
+          cmp release/Mythra.exe "$directory/download.exe"

@@ -27,7 +27,7 @@ the second command writes `build/bin/Mythra.exe`. all frontend assets and built-
 
 the public windows download is [scalping.mythra.pw/download](https://scalping.mythra.pw/download). successful releases atomically replace the executable on the download server after publishing it to the private github repository.
 
-pushing a version tag such as `v0.1.6` runs `.github/workflows/release.yml`: frontend/backend checks, a windows build and publication of `Mythra.exe`. a normal branch push runs checks only; it does not publish a release. publication happens only after the tagged revision passes its checks and builds successfully.
+pushing a version tag such as `v0.1.6` runs `.github/workflows/release.yml`: frontend/backend checks, a windows build and a draft release containing `Mythra.exe`. a normal branch push runs checks only; it does not publish a release. publish the draft after checking the exact executable with antivirus tools. `.github/workflows/download.yml` then updates the public download automatically.
 
 for the next release, update `frontend/package.json` and its lockfile with `npm --prefix frontend version 0.1.6 --no-git-tag-version`, then set both version fields in `build/windows/info.json` to `0.1.6`. commit and push those changes before tagging that commit:
 
@@ -125,4 +125,4 @@ VITE_DYNAMIC_AUDIT=1 npm test -- src/dynamic-audit.test.tsx
 
 ## licensing
 
-windows builds require a key from [the mythra bot](https://t.me/mythrascalping_bot). see [licensing operations and protection limits](docs/licensing.md) for server administration, equipment binding, protected builds and the vpn port migration.
+windows builds require a key from [the mythra bot](https://t.me/mythrascalping_bot). see [licensing operations and protection limits](docs/licensing.md) for server administration, equipment binding, release builds and the vpn port migration.
