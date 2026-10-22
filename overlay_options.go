@@ -4,7 +4,7 @@ import "github.com/wailsapp/wails/v3/pkg/application"
 
 func overlayOptions() application.WebviewWindowOptions {
 	return application.WebviewWindowOptions{
-		Name: "overlay", Title: "cryptotape alerts", Width: 360, Height: 1,
+		Name: "overlay", Title: "cryptotape alerts", Width: 360, Height: compactOverlayHeight,
 		URL: "/?overlay=1", Hidden: true, Frameless: true, DisableResize: true,
 		AlwaysOnTop: true, BackgroundType: application.BackgroundTypeTransparent,
 		Windows: application.WindowsWindow{DisableFramelessWindowDecorations: true},

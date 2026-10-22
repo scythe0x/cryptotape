@@ -15,14 +15,22 @@
 .scroll-dialog > .dialog-heading { flex-shrink: 0; }
 .dialog-body-scroll { flex: 0 1 auto; min-height: 0; margin-right: -10px; padding-right: 10px; }
 .dialog-body-scroll > .scroll-viewport { max-height: calc(100dvh - 120px); }
-.settings-dialog.scroll-dialog > [data-orientation='horizontal'] { display: flex; flex-direction: column; min-height: 0; }
-.settings-body-scroll { flex: 0 1 auto; min-height: 0; margin-right: -10px; padding-right: 10px; }
-.settings-body-scroll > .scroll-viewport { max-height: calc(100dvh - 174px); }
-.settings-dialog .settings-tabs { flex-shrink: 0; }
-.settings-dialog .rule-list { max-height: none; overflow: visible; }
+.settings-body-scroll { flex: 1; min-height: 0; margin-right: -10px; padding-right: 10px; }
+.settings-page .settings-tabs { flex-shrink: 0; }
+.settings-page .rule-list { max-height: none; overflow: visible; }
 .rule-meta-row { display: flex; align-items: center; gap: 9px; margin-top: 9px; }
 .rule-meta-row .rule-meta { margin-top: 0; }
 .rule-meta-row .rule-terminals { display: flex; gap: 6px; flex-shrink: 0; margin-top: 0; }
 .rule-terminal-icon { width: 16px; height: 16px; }
 .listing-key-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .listing-key-saved { display: inline-flex; align-items: center; gap: 4px; color: #66c989; font-size: 11px; }
+.settings-page { height: 100dvh; display: flex; flex-direction: column; padding: 16px 22px; overflow: hidden; }
+.settings-heading { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.settings-heading h1 { margin: 0; font-size: 16px; font-weight: 600; }
+.settings-page > [data-orientation='horizontal'] { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.settings-page .settings-tabs { gap: 6px 15px; flex-wrap: wrap; }
+.settings-window-message { padding: 22px; }
+.table-columns-panel { padding-top: 14px; }
+.table-columns-panel[data-saving] .active-items { pointer-events: none; opacity: .65; }
+.settings-window-error { position: fixed; bottom: 0; left: 0; right: 0; z-index: 30; padding: 10px 22px; background: var(--panel); border-top: 1px solid var(--line); }
+.settings-window-page body { min-width: 0; }

@@ -1,5 +1,6 @@
 import { Call, Events, Clipboard, Browser } from '@wailsio/runtime'
 import { z } from 'zod'
+import { tableColumnIDs, type TableColumnID } from './table-columns'
 
 export const terminalSchema = z.enum(['vataga', 'tiger'])
 export type TerminalID = z.infer<typeof terminalSchema>
@@ -66,11 +67,16 @@ export const ruleSchema = z.object({
 
 export const languageSchema = z.enum(['en', 'ru'])
 
-export const tableColumnSchema = z.enum(['time', 'ticker', 'event', 'terminals'])
-export type TableColumnID = z.infer<typeof tableColumnSchema>
-export const defaultTableColumns: TableColumnID[] = ['time', 'ticker', 'event', 'terminals']
+export const tableColumnSchema = z.enum(tableColumnIDs)
+export type { TableColumnID } from './table-columns'
+export const defaultTableColumns: TableColumnID[] = [...tableColumnIDs]
 export const tableColumnsSchema = z.array(tableColumnSchema)
   .refine((columns) => new Set(columns).size === columns.length, 'duplicate table columns')
+
+export const settingsSectionSchema = z.enum(['alerts', 'proxies', 'listings', 'general', 'columns'])
+export type SettingsSection = z.infer<typeof settingsSectionSchema>
+export const settingsSessionSchema = z.object({ section: settingsSectionSchema, revision: z.number().int().nonnegative() })
+export type SettingsSession = z.infer<typeof settingsSessionSchema>
 
 export const proxyProtocolSchema = z.enum(['http', 'https', 'socks5'])
 export const proxySchema = z.object({
@@ -219,6 +225,11 @@ async function command(method: string, ...args: unknown[]): Promise<void> {
 }
 
 export const desktop = {
+  openSettings: (section: SettingsSection = 'alerts') => command('OpenSettings', section),
+  hideSettings: () => command('HideSettings'),
+  settingsSession: () => invoke('GetSettingsSession', settingsSessionSchema),
+  setMainWindowMinimum: (width: number, height: number, viewportWidth: number, viewportHeight: number) =>
+    command('SetMainWindowMinimum', width, height, viewportWidth, viewportHeight),
   openListingURL: (value: string) => Browser.OpenURL(z.url({ protocol: /^https$/ }).parse(value)),
   listingSource: () => invoke('ListingSource', listingSourceSchema),
   saveListingSource: (endpoint: string, key: string) => command('SaveListingSource', endpoint, key),
@@ -331,6 +342,7 @@ function alertBatches(handle: (alerts: Alert[], updates: AlertUpdate[]) => void)
 }
 
 export const events = {
+  settingsOpened: (handle: (session: SettingsSession) => void) => listen('settings:opened', settingsSessionSchema, handle),
   listingHealth: (handle: (health: ListingHealth) => void) =>
     listen('listing:health', listingHealthSchema, handle),
   alerts: alertBatches,

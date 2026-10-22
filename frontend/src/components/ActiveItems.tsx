@@ -1,11 +1,13 @@
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { DragDropProvider, useDroppable } from '@dnd-kit/react'
+import { DragDropProvider, useDragOperation, useDroppable } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { move } from '@dnd-kit/helpers'
 import './active-items.css'
 
 export type ActiveItem<T extends string> = { id: T; label: string; content: ReactNode }
+type ItemZoneID = 'active' | 'inactive'
+type ItemDragData = { zone: ItemZoneID }
 type Groups<T extends string> = { active: T[]; inactive: T[] }
 type Props<T extends string> = {
   items: readonly ActiveItem<T>[]
@@ -70,7 +72,7 @@ export function ActiveItems<T extends string>({ items, value, onChange, activeLa
     >
       <div className="active-items">
         {(['active', 'inactive'] as const).map((group) => (
-          <ItemZone key={group} id={group} label={labels[group]}>
+          <ItemZone key={group} id={group} itemIds={groups[group]} label={labels[group]}>
             {groups[group].map((id, index) => {
               const item = items.find((candidate) => candidate.id === id)
               return item ? (
@@ -95,8 +97,14 @@ function sameItems<T>(left: readonly T[], right: readonly T[]) {
   return left.length === right.length && left.every((item, index) => item === right[index])
 }
 
-function ItemZone({ id, label, children }: { id: string; label: string; children: ReactNode }) {
-  const { ref, isDropTarget } = useDroppable({ id, collisionPriority: CollisionPriority.Low })
+function ItemZone({ id, itemIds, label, children }: { id: ItemZoneID; itemIds: readonly string[]; label: string; children: ReactNode }) {
+  const { ref } = useDroppable<ItemDragData>({ id, data: { zone: id }, collisionPriority: CollisionPriority.Low })
+  const { source, target } = useDragOperation<ItemDragData>()
+  const isDropTarget = Boolean(source && target && (
+    target.id === source.id
+      ? itemIds.some((itemId) => itemId === source.id)
+      : target.data.zone === id
+  ))
   return (
     <section className={`active-items-zone active-items-${id}${isDropTarget ? ' is-drop-target' : ''}`}>
       <span className="active-items-label">{label}</span>
@@ -110,11 +118,11 @@ function ItemZone({ id, label, children }: { id: string; label: string; children
 function SortableItem<T extends string>({ item, index, group, scope, onKeyDown }: {
   item: ActiveItem<T>
   index: number
-  group: string
+  group: ItemZoneID
   scope: string
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void
 }) {
-  const { ref, isDragging } = useSortable({ id: item.id, index, group, type: scope, accept: scope })
+  const { ref, isDragging } = useSortable<ItemDragData>({ id: item.id, index, group, data: { zone: group }, type: scope, accept: scope })
   return (
     <button
       ref={ref}

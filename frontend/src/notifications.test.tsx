@@ -184,7 +184,7 @@ it('explains the automatic cooldown beside the rule window', async () => {
 })
 
 it('saves the language preference in settings', async () => {
-  const { SettingsDialog } = await import('./components/SettingsDialog')
+  const { SettingsContent } = await import('./components/SettingsContent')
   const settings = {
     tableColumns: ['time', 'ticker', 'event', 'terminals'] satisfies TableColumnID[],
     language: 'en' as const,
@@ -200,9 +200,9 @@ it('saves the language preference in settings', async () => {
     if (name.endsWith('.Monitors')) return []
   })
   render(
-    <SettingsDialog
-      open
-      onOpenChange={vi.fn()}
+    <SettingsContent
+      section="alerts"
+      onClose={vi.fn()}
       settings={settings}
       rules={[]}
       sounds={['chime']}
@@ -669,10 +669,10 @@ it('toggles global sound with green and red states and reports save failures', a
 })
 
 it('saves banner visibility independently of sound in general settings', async () => {
-  const { SettingsDialog } = await import('./components/SettingsDialog')
+  const { SettingsContent } = await import('./components/SettingsContent')
   const settings = { ...initialSnapshot().settings, soundMuted: true }
   backend.call.mockResolvedValue([])
-  render(<SettingsDialog open onOpenChange={vi.fn()} settings={settings} rules={[]} sounds={[]} onSaved={vi.fn()} />)
+  render(<SettingsContent section="alerts" onClose={vi.fn()} settings={settings} rules={[]} sounds={[]} onSaved={vi.fn()} />)
   await userEvent.click(screen.getByRole('tab', { name: 'general' }))
   const checkbox = screen.getByRole('checkbox', { name: 'show notifications in the corner of the screen' })
   expect(checkbox.matches(':checked')).toBe(true)
@@ -855,9 +855,9 @@ it('uses the listing source icon and event in the banner title without time or l
   expect(container.querySelector('.listing-link')).toBeNull()
 })
 
-it('sizes the native window from its rendered stack and updates the alert guard at the same height', async () => {
-  const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => window.setTimeout(() => callback(performance.now()), 0))
-  const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => window.clearTimeout(id))
+it('sizes the native window even without browser frames and updates its alert guard', async () => {
+  const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1)
+  const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
   const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(52)
   try {
     render(<Overlay />)
@@ -882,8 +882,8 @@ it('remeasures content changes without polling and retains the rule color withou
     disconnect() {}
   })
   let measuredHeight = 52
-  const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => window.setTimeout(() => callback(performance.now()), 0))
-  const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => window.clearTimeout(id))
+  const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1)
+  const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
   const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => measuredHeight)
   try {
     const { container } = render(<Overlay />)
@@ -896,7 +896,7 @@ it('remeasures content changes without polling and retains the rule color withou
     await waitFor(() => expect(backend.call).toHaveBeenCalledWith('main.DesktopService.ResizeOverlay', 78, alert.id))
     backend.call.mockClear()
     act(() => notifyResize())
-    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    await Promise.resolve()
     expect(backend.call).not.toHaveBeenCalled()
   } finally {
     height.mockRestore()

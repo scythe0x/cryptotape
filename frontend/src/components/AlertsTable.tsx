@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowUp, Check } from 'lucide-react'
 import type { Alert, Rule, TableColumnID, TerminalID } from '../api'
 import { desktop, defaultTableColumns } from '../api'
+import { minimumTableRowHeight, tableGridTemplate, tableMinimumWidth } from '../table-columns'
 import { useTranslation } from '../i18n'
 import { localizeDiagnostic } from '../i18n/diagnostics'
 import { Ticker } from './Ticker'
@@ -59,7 +60,7 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError, columns
   const virtualizer = useVirtualizer({
     count: columns.length ? rows.length : 0,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 40,
+    estimateSize: () => minimumTableRowHeight,
     overscan: 8,
     getItemKey,
     anchorTo: pausedAt === null ? 'start' : 'end',
@@ -74,13 +75,8 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError, columns
   }, [columns, virtualizer])
   useAlertRendered(virtualizer.getVirtualItems().map((item) => rows[item.index].id), 'feed')
   const unseen = pausedAt === null ? 0 : alerts.filter((alert) => alert.id > pausedAt).length
-  const widths: Record<TableColumnID, string> = {
-    time: '66px',
-    ticker: 'minmax(90px, 120px)',
-    event: 'minmax(0, 1fr)',
-    terminals: '58px',
-  }
-  const gridTemplateColumns = columns.map((column) => widths[column]).join(' ')
+  const gridTemplateColumns = tableGridTemplate(columns)
+  const minimumWidth = tableMinimumWidth(columns)
   const headers: Record<TableColumnID, string> = {
     time: t('time'),
     ticker: t('ticker'),
@@ -140,12 +136,17 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError, columns
   }
 
   return (
-    <section className="feed-panel measured-feed">
-      <div className="table-header" style={{ gridTemplateColumns }}>
-        {columns.map((column) => (
-          <div key={column} className="feed-column-heading">{headers[column]}</div>
-        ))}
-      </div>
+    <section
+      className="feed-panel measured-feed"
+      style={{ minWidth: minimumWidth, '--table-row-min-height': `${minimumTableRowHeight}px` } as CSSProperties}
+    >
+      {columns.length > 0 && (
+        <div className="table-header" data-window-table-header style={{ gridTemplateColumns }}>
+          {columns.map((column) => (
+            <div key={column} data-column-id={column} className="feed-column-heading">{headers[column]}</div>
+          ))}
+        </div>
+      )}
       <ScrollArea
         className="table-scroll-area"
         viewportClassName="table-scroll"

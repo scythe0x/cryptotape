@@ -81,24 +81,19 @@ export function Overlay() {
   useLayoutEffect(() => {
     const element = stack.current
     if (!element || cards.length === 0) return
-    let frame = 0
     let lastHeight = 0
     const afterID = latestID.current
     function measure() {
-      window.cancelAnimationFrame(frame)
-      frame = window.requestAnimationFrame(() => {
-        const height = Math.ceil(element?.offsetHeight ?? 0)
-        if (height <= 0 || height === lastHeight) return
-        lastHeight = height
-        void desktop.resizeOverlay(height, afterID).catch((cause: unknown) => setError(String(cause)))
-      })
+      const height = Math.ceil(element?.offsetHeight ?? 0)
+      if (height <= 0 || height === lastHeight) return
+      lastHeight = height
+      void desktop.resizeOverlay(height, afterID).catch((cause: unknown) => setError(String(cause)))
     }
     const observer = new ResizeObserver(measure)
     observer.observe(element)
     measure()
     return () => {
       observer.disconnect()
-      window.cancelAnimationFrame(frame)
     }
   }, [cards])
 

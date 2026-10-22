@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
-import * as Dialog from '@radix-ui/react-dialog'
 import * as Tabs from '@radix-ui/react-tabs'
 import { X } from 'lucide-react'
-import type { Monitor, Rule, Settings } from '../api'
-import { desktop, languageSchema } from '../api'
+import type { Monitor, Rule, Settings, SettingsSection } from '../api'
+import { desktop, languageSchema, settingsSectionSchema } from '../api'
 import { Button, Checkbox, Input } from './ui'
 import { useTranslation } from '../i18n'
 import { localizeDiagnostic } from '../i18n/diagnostics'
@@ -12,51 +11,46 @@ import { ProxySettings } from './ProxySettings'
 import { ListingSourceSettings } from './ListingSourceSettings'
 import { Select } from './Select'
 import { ScrollArea } from './ScrollArea'
+import { TableColumns } from './TableColumns'
 
 type Props = {
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  section: SettingsSection
   settings: Settings
   rules: Rule[]
   sounds: string[]
   onSaved: () => void
+  onClose: () => void
 }
 
-export function SettingsDialog(props: Props) {
-  return (
-    <Dialog.Root open={props.open} onOpenChange={props.onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="dialog-content settings-dialog scroll-dialog">
-          <SettingsContent {...props} />
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
-  )
-}
-
-function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved }: Props) {
+export function SettingsContent({ section, onClose, settings, rules, sounds, onSaved }: Props) {
   const { t } = useTranslation()
   const [draft, setDraft] = useState(settings)
+  const [tab, setTab] = useState<SettingsSection>(section)
   const [monitors, setMonitors] = useState<Monitor[]>([])
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!open) return
     void desktop
       .monitors()
       .then(setMonitors)
       .catch((error: unknown) => setMessage(String(error)))
-  }, [open])
+  }, [])
 
   async function save(event: React.FormEvent) {
     event.preventDefault()
     setSaving(true)
     try {
-      await desktop.saveSettings(draft)
+      await desktop.saveSettings({
+        ...settings,
+        language: draft.language,
+        bannersEnabled: draft.bannersEnabled,
+        tigerPort: draft.tigerPort,
+        tigerLinkGroup: draft.tigerLinkGroup,
+        monitorId: draft.monitorId,
+      })
       onSaved()
-      onOpenChange(false)
+      onClose()
     } catch (error) {
       setMessage(String(error))
     } finally {
@@ -65,22 +59,20 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
   }
 
   return (
-    <>
-      <div className="dialog-heading">
-        <Dialog.Title>{t('settings')}</Dialog.Title>
-        <Dialog.Close asChild>
-          <Button size="icon" variant="ghost" aria-label={t('close')}>
-            <X size={15} />
-          </Button>
-        </Dialog.Close>
-      </div>
-      <Dialog.Description className="sr-only">{t('settingsDescription')}</Dialog.Description>
-      <Tabs.Root defaultValue="alerts">
+    <main className="settings-page">
+      <header className="settings-heading">
+        <h1>{t('settings')}</h1>
+        <Button size="icon" variant="ghost" aria-label={t('close')} onClick={onClose}>
+          <X size={15} />
+        </Button>
+      </header>
+      <Tabs.Root value={tab} onValueChange={(value) => setTab(settingsSectionSchema.parse(value))}>
         <Tabs.List className="settings-tabs" aria-label={t('settingsSections')}>
           <Tabs.Trigger value="alerts">{t('alerts')}</Tabs.Trigger>
           <Tabs.Trigger value="proxies">{t('proxies')}</Tabs.Trigger>
           <Tabs.Trigger value="listings">{t('listingsSource')}</Tabs.Trigger>
           <Tabs.Trigger value="general">{t('general')}</Tabs.Trigger>
+          <Tabs.Trigger value="columns">{t('tableColumns')}</Tabs.Trigger>
         </Tabs.List>
         <ScrollArea className="settings-body-scroll">
           <Tabs.Content value="alerts" className="settings-tab-content">
@@ -91,6 +83,10 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
           </Tabs.Content>
           <Tabs.Content value="listings" className="settings-tab-content">
             <ListingSourceSettings />
+          </Tabs.Content>
+          <Tabs.Content value="columns" className="settings-tab-content">
+            <TableColumns settings={settings} onError={setMessage} />
+            {message && <div className="inline-error">{localizeDiagnostic(message)}</div>}
           </Tabs.Content>
           <Tabs.Content value="general">
             <form onSubmit={save} className="form-stack">
@@ -156,7 +152,7 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
                 </div>
               )}
               <div className="dialog-actions">
-                <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+                <Button type="button" variant="ghost" onClick={onClose}>
                   {t('cancel')}
                 </Button>
                 <Button type="submit" variant="primary" disabled={saving}>
@@ -167,6 +163,6 @@ function SettingsContent({ open, onOpenChange, settings, rules, sounds, onSaved 
           </Tabs.Content>
         </ScrollArea>
       </Tabs.Root>
-    </>
+    </main>
   )
 }

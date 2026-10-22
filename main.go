@@ -27,7 +27,14 @@ type Monitor struct {
 type DesktopService struct {
 	controller      *desktop.Controller
 	app             *application.App
-	overlay         *application.WebviewWindow
+	mainWindow      *application.WebviewWindow
+	settingsWindow  settingsNativeWindow
+	settingsMu      sync.Mutex
+	settingsSession SettingsSession
+	minimumMu       sync.Mutex
+	minimumWidth    int
+	minimumHeight   int
+	overlay         overlayWindow
 	overlayMu       sync.Mutex
 	visible         bool
 	latestID        int64
@@ -119,40 +126,6 @@ func (s *DesktopService) PreviewSound(id string, volume float64) error {
 	return s.controller.PreviewSound(id, volume)
 }
 
-func (s *DesktopService) HideOverlay(afterID int64) {
-	s.overlayMu.Lock()
-	defer s.overlayMu.Unlock()
-	if afterID < s.latestID || s.overlay == nil {
-		return
-	}
-	s.overlay.Hide()
-	s.visible = false
-	s.hiddenThroughID = max(s.hiddenThroughID, afterID)
-}
-
-func (s *DesktopService) showOverlay(id int64) {
-	s.overlayMu.Lock()
-	defer s.overlayMu.Unlock()
-	if !s.controller.BannersEnabled() {
-		return
-	}
-	s.latestID = max(s.latestID, id)
-}
-
-func (s *DesktopService) ResizeOverlay(height int, afterID int64) {
-	s.overlayMu.Lock()
-	defer s.overlayMu.Unlock()
-	if height <= 0 || afterID < s.latestID || afterID <= s.hiddenThroughID || s.overlay == nil || !s.controller.BannersEnabled() {
-		return
-	}
-	s.overlayHeight = height
-	s.placeOverlay(s.controller.MonitorID())
-	if !s.visible {
-		s.overlay.Show()
-		s.visible = true
-	}
-}
-
 func (s *DesktopService) Monitors() []Monitor {
 	screens := s.app.Screen.GetAll()
 	monitors := make([]Monitor, 0, len(screens))
@@ -162,32 +135,12 @@ func (s *DesktopService) Monitors() []Monitor {
 	return monitors
 }
 
-func (s *DesktopService) placeOverlay(monitorID string) {
-	if s.app == nil || s.overlay == nil {
-		return
-	}
-	screen := s.app.Screen.GetByID(monitorID)
-	if screen == nil {
-		screen = s.app.Screen.GetPrimary()
-	}
-	if screen == nil {
-		return
-	}
-	s.overlay.SetBounds(overlayBounds(screen.WorkArea, s.overlayHeight))
-}
-
-func overlayBounds(area application.Rect, height int) application.Rect {
-	const width, margin = 360, 16
-	height = max(1, min(height, area.Height-2*margin))
-	return application.Rect{X: area.X + area.Width - width - margin, Y: area.Y + area.Height - height - margin, Width: width, Height: height}
-}
-
 func main() {
 	path, err := storage.DefaultPath()
 	if err != nil {
 		log.Fatal(err)
 	}
-	service := &DesktopService{}
+	service := &DesktopService{settingsSession: SettingsSession{Section: "alerts"}}
 	controller, err := desktop.NewController(path, func(name string, data any) {
 		if alert, ok := data.(core.Alert); name == "alert:new" && ok && alert.BannerSeconds != 0 && service.overlay != nil {
 			service.showOverlay(alert.ID)
@@ -216,14 +169,25 @@ func main() {
 	service.app = app
 	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name: "main", Title: "cryptotape", Width: 440, Height: 740,
-		MinWidth: 420, MinHeight: 420, URL: "/",
+		URL: "/",
 	})
-	service.overlay = app.Window.NewWithOptions(overlayOptions())
+	service.mainWindow = mainWindow
+	settingsWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name: "settings", Title: "cryptotape settings", Width: 520, Height: 720,
+		MinWidth: 360, MinHeight: 240, Hidden: true, URL: "/?settings=1",
+	})
+	service.settingsWindow = settingsWindow
+	settingsWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		service.HideSettings()
+		event.Cancel()
+	})
+	overlay := app.Window.NewWithOptions(overlayOptions())
+	service.overlay = overlay
 	mainWindow.RegisterHook(events.Common.WindowClosing, func(_ *application.WindowEvent) {
 		app.Quit()
 	})
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
-		if err := makeNonActivating(service.overlay); err != nil {
+		if err := makeNonActivating(overlay); err != nil {
 			slog.Warn("overlay focus style", "error", err)
 		}
 		snapshot, err := controller.GetSnapshot()

@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { alertSchema, defaultTableColumns, settingsSchema, type Alert } from './api'
 import { applyLanguage } from './i18n'
 import { AlertsTable, sortAlerts } from './components/AlertsTable'
@@ -66,6 +65,7 @@ it('respects ordered columns, including an entirely hidden table', () => {
   expect(container.querySelector('.feed-cell-ticker')).toBeNull()
   rerender(<AlertsTable {...props} columns={[]} />)
   expect(container.querySelector('.table-row')).toBeNull()
+  expect(container.querySelector('.table-header')).toBeNull()
 })
 
 it('requests older alerts near the end of the scroll viewport', () => {
@@ -105,7 +105,6 @@ it('supports keyboard reordering and moving into an empty zone', () => {
 it('saves only the reordered columns through their dedicated endpoint', async () => {
   const settings = settingsSchema.parse({ language: 'en', proxies: [], activeProxyId: '', monitorId: '', tigerPort: 7819, tigerLinkGroup: 'A' })
   render(<TableColumns settings={settings} onError={vi.fn()} />)
-  await userEvent.click(screen.getByRole('button', { name: 'columns' }))
   fireEvent.keyDown(screen.getByRole('button', { name: 'ticker' }), { key: 'ArrowLeft' })
   await waitFor(() => expect(backend.call).toHaveBeenCalledWith('main.DesktopService.SetTableColumns', ['ticker', 'time', 'event', 'terminals']))
   expect(backend.call).not.toHaveBeenCalledWith('main.DesktopService.UpdateSettings', expect.anything())
@@ -116,7 +115,6 @@ it('reports a failed column save without hiding the previous selection', async (
   const onError = vi.fn()
   backend.call.mockRejectedValueOnce(new Error('disk full'))
   render(<TableColumns settings={settings} onError={onError} />)
-  await userEvent.click(screen.getByRole('button', { name: 'columns' }))
   fireEvent.keyDown(screen.getByRole('button', { name: 'ticker' }), { key: 'ArrowDown' })
   await waitFor(() => expect(onError).toHaveBeenCalledWith('Error: disk full'))
   expect(within(screen.getByRole('group', { name: 'active columns' })).getAllByRole('button')).toHaveLength(4)
