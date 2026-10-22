@@ -132,6 +132,9 @@ func (a *ActivationService) Continue() error {
 		s.controller.Start(s.app.Context())
 		a.running = true
 	}
+	if s.clock != nil {
+		s.clock.restore()
+	}
 	s.mainWindow.Show()
 	s.mainWindow.Focus()
 	a.window.Hide()
@@ -156,6 +159,9 @@ func (a *ActivationService) changed(state licensing.State) {
 			s.mainWindow.Hide()
 		}
 		s.HideSettings()
+		if s.clock != nil {
+			s.clock.hide()
+		}
 		s.overlayMu.Lock()
 		if s.overlay != nil {
 			s.overlay.Hide()

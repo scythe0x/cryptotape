@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Settings2 } from 'lucide-react'
+import { Clock3, Settings2 } from 'lucide-react'
 import { desktop, events } from './api'
 import { WindowTitleBar } from './components/WindowTitleBar'
 import { SoundToggle } from './components/SoundToggle'
@@ -105,6 +105,10 @@ export function App() {
         onError={setError}
         actions={<>
           <SoundToggle settings={settings} onError={setError} />
+          <Button size="icon" variant="ghost" aria-label={t('openClock')} title={t('openClock')}
+            onClick={() => void desktop.openClock().catch((cause: unknown) => setError(String(cause)))}>
+            <Clock3 size={15} />
+          </Button>
           <Button
             size="icon"
             variant="ghost"

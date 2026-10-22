@@ -60,9 +60,15 @@ func main() {
 		Name: "Mythra", Icon: appIcon, Description: "fast Binance futures alerts",
 		Assets:   application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
 		Services: []application.Service{application.NewService(service), application.NewService(activation)},
-		Mac:      application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
+		OnShutdown: func() {
+			if service.clock != nil {
+				service.clock.prepareQuit()
+			}
+		},
+		Mac: application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
 	})
 	service.app = app
+	service.clock = newCandleClock(app, path+".clock.json")
 	if runtime.GOOS == "windows" {
 		activation.createWindow(app)
 	}
@@ -83,6 +89,7 @@ func main() {
 	overlay := app.Window.NewWithOptions(overlayOptions())
 	service.overlay = overlay
 	mainWindow.RegisterHook(events.Common.WindowClosing, func(_ *application.WindowEvent) {
+		service.clock.prepareQuit()
 		app.Quit()
 	})
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
@@ -93,6 +100,7 @@ func main() {
 		if err == nil {
 			service.placeOverlay(snapshot.Settings.MonitorID)
 		}
+		service.clock.start(app.Context(), service.access)
 		if runtime.GOOS != "windows" {
 			controller.Start(app.Context())
 		}

@@ -1,4 +1,8 @@
 export const en = {
+  openClock: 'candle clock',
+  clockTimezone: 'timezone',
+  systemTimezone: 'system',
+
   tableColumns: 'columns',
   activeColumns: 'active columns',
   inactiveColumns: 'inactive columns',

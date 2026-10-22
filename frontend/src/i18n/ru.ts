@@ -1,6 +1,10 @@
 import type { en } from './en'
 
 export const ru = {
+  openClock: 'часы свечей',
+  clockTimezone: 'часовой пояс',
+  systemTimezone: 'системный',
+
   tableColumns: 'столбцы',
   activeColumns: 'активные столбцы',
   inactiveColumns: 'неактивные столбцы',

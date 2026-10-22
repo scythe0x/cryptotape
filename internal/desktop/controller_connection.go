@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -116,4 +117,18 @@ func (c *Controller) feedLoop(ctx context.Context, proxy string, minVolume float
 		c.mu.Unlock()
 	}
 
+}
+
+// reuse the market route and REST admission, including the selected proxy.
+func (c *Controller) ClockOffset(ctx context.Context) (float64, error) {
+	if !c.actionsAllowed() {
+		return 0, errors.New("access unavailable")
+	}
+	c.mu.RLock()
+	feed := c.feed
+	c.mu.RUnlock()
+	if feed == nil {
+		return 0, errors.New("market connection unavailable")
+	}
+	return feed.ClockOffset(ctx)
 }

@@ -460,3 +460,11 @@ func (f *Feed) refreshSymbols(symbols []string) {
 		}
 	}
 }
+
+// clock offset refreshes exchange time and returns the local clock offset in milliseconds.
+func (f *Feed) ClockOffset(ctx context.Context) (float64, error) {
+	if err := f.syncClock(ctx); err != nil {
+		return 0, err
+	}
+	return float64(f.clockOffset.Load()) / float64(time.Millisecond), nil
+}

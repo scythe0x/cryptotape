@@ -225,6 +225,10 @@ async function command(method: string, ...args: unknown[]): Promise<void> {
 }
 
 export const desktop = {
+  openClock: () => command('OpenClock'),
+  clockTimezone: () => invoke('GetClockTimezone', z.string()),
+  setClockTimezone: (zone: string) => command('SetClockTimezone', zone),
+  clockOffset: () => invoke('ClockOffset', z.number()),
   openSettings: (section: SettingsSection = 'alerts') => command('OpenSettings', section),
   hideSettings: () => command('HideSettings'),
   settingsSession: () => invoke('GetSettingsSession', settingsSessionSchema),

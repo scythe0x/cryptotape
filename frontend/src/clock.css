@@ -1,0 +1,59 @@
+@font-face {
+  font-family: 'Roboto Mono';
+  src: url('./assets/fonts/RobotoMono-Medium.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+}
+
+html.clock-page, .clock-page body, .clock-page #root { background: transparent; }
+
+.candle-clock {
+  --wails-draggable: drag;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 8px;
+  user-select: none;
+  color: white;
+}
+
+.candle-clock:hover, .candle-clock:focus-within { background: rgb(255 220 0 / 8%); }
+.clock-composition { display: block; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.clock-composition text {
+  font-family: 'Roboto Mono', monospace;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  fill: #fff;
+}
+.clock-time { font-size: 52px; letter-spacing: -3px; }
+.clock-time.clock-yellow { fill: #ffe100; }
+.clock-label { font-size: 34.667px; letter-spacing: -2px; }
+
+.clock-controls {
+  --wails-draggable: no-drag;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  opacity: 0;
+  pointer-events: none;
+}
+.candle-clock:hover .clock-controls, .candle-clock:focus-within .clock-controls { opacity: 1; pointer-events: auto; }
+.clock-controls button, .clock-zone {
+  --wails-draggable: no-drag;
+  height: 20px;
+  border: 0;
+  border-radius: 3px;
+  background: #252511;
+  color: white;
+}
+.clock-controls button { width: 20px; padding: 0; display: grid; place-items: center; }
+.clock-controls button:hover, .clock-zone:hover { background: #41411b; }
+.clock-zone { position: relative; padding: 2px 5px; font-size: 10px; }
+.clock-zone select { --wails-draggable: no-drag; position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.clock-zone option { background: #191919; color: white; }
+.clock-zone:focus-within { outline: 1px solid #ffe100; }

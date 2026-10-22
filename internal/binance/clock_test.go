@@ -37,8 +37,12 @@ func TestClockSyncExcludesAdmissionAndConnectionSetup(t *testing.T) {
 	f := &Feed{client: &http.Client{Transport: streamTransport{target: target, base: transport}}, rest: gate}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := f.syncClock(ctx); err != nil {
+	offsetMs, err := f.ClockOffset(ctx)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if offsetMs < -200 || offsetMs > 200 {
+		t.Fatalf("clock window offset: %f ms", offsetMs)
 	}
 	if offset := time.Duration(f.clockOffset.Load()); offset < -200*time.Millisecond || offset > 200*time.Millisecond {
 		t.Fatalf("connection setup or REST admission biased clock offset: %s", offset)

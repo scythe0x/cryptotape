@@ -1,10 +1,10 @@
 {
   "fixed": {
-    "file_version": "0.1.12"
+    "file_version": "0.1.13"
   },
   "info": {
     "0000": {
-      "ProductVersion": "0.1.12",
+      "ProductVersion": "0.1.13",
       "CompanyName": "Mythra",
       "FileDescription": "Mythra",
       "LegalCopyright": "Mythra",

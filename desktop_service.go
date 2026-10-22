@@ -14,6 +14,7 @@ type Monitor struct {
 }
 
 type DesktopService struct {
+	clock           *candleClock
 	access          func() bool
 	runMu           sync.RWMutex
 	activation      *ActivationService
