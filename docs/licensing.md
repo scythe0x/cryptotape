@@ -1,6 +1,6 @@
 # licensing and basic executable protection
 
-windows releases use the standard go 1.26.10 compiler, without garble, string obfuscation or a packer. paths are trimmed and the executable uses the windows gui subsystem. this profile replaces the obfuscated v0.1.9 profile after antivirus detections were reported; removal of obfuscation is not a guarantee of zero detections. licensing and cryptographic checks remain unchanged. the deeper rea/ghidra audit was stopped at the owner's request in favor of possible server-side computation.
+windows releases use go 1.26.10 and garble v0.17.0. internal application packages have identifier and literal obfuscation; the wails rpc surface remains stable. private obfuscation seeds are written to `build/private/` and retained separately from the public executable. v0.1.11 restores this profile at the owner's request after comparing antivirus results with ordinary go builds. neither profile guarantees zero detections. licensing and cryptographic checks remain unchanged. the deeper rea/ghidra audit was stopped in favor of possible server-side computation.
 
 ## access contract
 

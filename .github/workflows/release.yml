@@ -49,6 +49,13 @@ jobs:
       - name: install build tools
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.33
       - run: wails3 task build:windows:binary
+      - name: retain private build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: private-windows-build-metadata
+          path: build/private/
+          retention-days: 14
+          if-no-files-found: error
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}

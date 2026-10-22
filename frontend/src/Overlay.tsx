@@ -17,6 +17,7 @@ export function Overlay() {
   const { t } = useTranslation()
   const [cards, setCards] = useState<Alert[]>([])
   const [error, setError] = useState('')
+  const [terminalError, setTerminalError] = useState<{ id: number; message: string } | null>(null)
   const reducedMotion = useReducedMotion()
   const latestID = useRef(0)
   const dismissed = useRef(new Set<number>())
@@ -105,19 +106,21 @@ export function Overlay() {
   const close = useCallback((id: number) => {
     dismissed.current.add(id)
     setCards((current) => current.filter((card) => card.id !== id))
+    setTerminalError((current) => current?.id === id ? null : current)
   }, [])
 
   async function open(alert: Alert) {
+    setTerminalError(null)
     try {
       const result = await desktop.openTerminals(
         alert.id,
         alert.symbol,
         alert.terminals.length ? alert.terminals : ['vataga'],
       )
-      setError(result.error)
+      if (result.error) setTerminalError({ id: alert.id, message: result.error })
       if (result.opened > 0) close(alert.id)
     } catch (cause) {
-      setError(`terminal: ${String(cause)}`)
+      setTerminalError({ id: alert.id, message: `terminal: ${String(cause)}` })
     }
   }
 
@@ -182,6 +185,11 @@ export function Overlay() {
                 )}
               </div>
             </button>
+            {terminalError?.id === alert.id && (
+              <div className="toast-error" role="alert">
+                {localizeDiagnostic(terminalError.message)}
+              </div>
+            )}
             <button
               className="toast-close"
               onClick={() => close(alert.id)}

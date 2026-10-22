@@ -49,6 +49,12 @@ it('measures wrapped virtual rows and repositions subsequent rows after resize',
   await waitFor(() => expect(container.querySelectorAll('.table-row')).toHaveLength(2))
   const rows = container.querySelectorAll<HTMLElement>('.table-row')
   await waitFor(() => expect(rows[1].style.transform).toBe('translateY(80px)'))
+  const viewport = container.querySelector('.table-scroll')
+  if (!viewport) throw new Error('missing viewport')
+  act(() => {
+    for (const observer of [...observers]) observer.resize(viewport)
+  })
+  await waitFor(() => expect(rows[1].style.transform).toBe('translateY(80px)'))
   rowHeight = 120
   act(() => {
     for (const observer of [...observers]) observer.resize(rows[0])

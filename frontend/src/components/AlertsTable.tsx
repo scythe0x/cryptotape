@@ -65,14 +65,6 @@ export function AlertsTable({ alerts, rules, hasMore, loadMore, onError, columns
     getItemKey,
     anchorTo: pausedAt === null ? 'start' : 'end',
   })
-  useEffect(() => {
-    const element = scrollRef.current
-    if (!element) return
-    const observer = new ResizeObserver(() => virtualizer.measure())
-    observer.observe(element)
-    virtualizer.measure()
-    return () => observer.disconnect()
-  }, [columns, virtualizer])
   useAlertRendered(virtualizer.getVirtualItems().map((item) => rows[item.index].id), 'feed')
   const unseen = pausedAt === null ? 0 : alerts.filter((alert) => alert.id > pausedAt).length
   const gridTemplateColumns = tableGridTemplate(columns)

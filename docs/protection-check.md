@@ -1,7 +1,6 @@
 # historical obfuscation check: v0.1.9
 
-the obfuscated release described below received multiple antivirus detections. the build profile now uses the standard go compiler without garble; these results describe v0.1.9 only. the cause of the detections requires comparison and vendor analysis.
-
+the obfuscated release described below received multiple antivirus detections. the standard go profile was evaluated for v0.1.10; v0.1.11 restores garble at the owner's request. the original measurements below describe v0.1.9 only. the cause of the detections requires comparison and vendor analysis.
 
 2026-10-22. the owner limited this work to basic protection and is considering server-side computation. no experimental control-flow transforms, packers or anti-debugging were added.
 
@@ -23,3 +22,13 @@ the same v0.1.9 source was rebuilt with the ordinary go compiler, no garble, pac
 sha256: `1c3c308eb09e190c1090f1d2257154fbfc4fa3a03e53ebb34c5ff960cf809f78`. [virustotal report](https://www.virustotal.com/gui/file/1c3c308eb09e190c1090f1d2257154fbfc4fa3a03e53ebb34c5ff960cf809f78): 3/69 detections (crowdstrike falcon, elastic, trapmine); maxsecure and tehtris timed out. microsoft, avast/avg, avira, bkav, mcafee, sophos and withsecure reported undetected in this scan. this improves on the owner's supplied list of 12 detections for the obfuscated release, but does not meet the requested zero-detection target or establish safety by itself.
 
 the candidate is `build/bin/Mythra-standard.exe`. the published release and `/download` have not been replaced. the report screenshot and structured results are retained under `build/bin/antivirus-check/`.
+
+## held release candidate: v0.1.10
+
+the windows ci build at `7b088f8` passed checks, and binary-mode govulncheck found no known vulnerabilities. sha256: `c1d689bcad3f88dd6dd7f0a43020a5a86a53886064cb241a2089bbdb0ac5bfcd`. [virustotal report](https://www.virustotal.com/gui/file/c1d689bcad3f88dd6dd7f0a43020a5a86a53886064cb241a2089bbdb0ac5bfcd): 5/71 detections, including microsoft `Trojan:Win32/Wacatac.B!ml` and maxsecure `Trojan.Malware.300983.susgen`, plus crowdstrike, elastic and trapmine.
+
+the owner accepts generic malicious/suspicious labels but requires no trojan classifications. this candidate therefore remains a draft and has not replaced `/download`. the unsigned control build's result did not carry over to the final release file; neither removal of obfuscation nor a clean vulnerability scan proves the absence of malware or guarantees future antivirus verdicts. the owner does not currently have a code-signing certificate.
+
+## release decision: v0.1.11
+
+the owner authorized restoring garble v0.17.0 and publishing all accumulated changes despite the antivirus results. the zero-trojan publication condition is waived for this release. v0.1.10 remains an unpublished comparison draft; v0.1.11 contains the restored protected profile and the pending table/notification fixes. no clean antivirus verdict is claimed for v0.1.11.

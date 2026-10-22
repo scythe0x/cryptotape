@@ -148,7 +148,49 @@ it('keeps a failed notification available for retry', async () => {
   render(<Overlay />)
   await userEvent.click(await screen.findByRole('button', { name: 'open BTCUSDT in terminal' }))
   expect(await screen.findByText(/Vataga unavailable/)).toBeTruthy()
+  expect(screen.getByRole('alert').closest('.toast')?.textContent).toContain('BTCUSDT')
   expect(screen.getByRole('button', { name: 'open BTCUSDT in terminal' })).toBeTruthy()
+})
+
+it.each(['result', 'rejection'])('removes a terminal %s error with its notification', async (failure) => {
+  const original = backend.call.getMockImplementation()!
+  backend.call.mockImplementation(async (name: string, ...args: unknown[]) => {
+    if (name.endsWith('.OpenTerminals')) {
+      if (failure === 'rejection') throw new Error('Vataga unavailable')
+      return { opened: 0, error: 'Vataga unavailable' }
+    }
+    return original(name, ...args)
+  })
+  render(<Overlay />)
+  await userEvent.click(await screen.findByRole('button', { name: 'open BTCUSDT in terminal' }))
+  await screen.findByText(/Vataga unavailable/)
+  await act(async () => {
+    backend.listeners.get('alert:new')?.({ data: { ...alert, id: 2, symbol: 'ETHUSDT' } })
+  })
+  expect(screen.getByRole('alert').closest('.toast')?.textContent).not.toContain('ETHUSDT')
+  const dismiss = screen.getByRole('alert').closest('.toast')?.querySelector<HTMLButtonElement>('.toast-close')
+  if (!dismiss) throw new Error('missing failed notification')
+  await userEvent.click(dismiss)
+  await waitFor(() => expect(screen.queryByText(/Vataga unavailable/)).toBeNull())
+  expect(await screen.findByRole('button', { name: 'open ETHUSDT in terminal' })).toBeTruthy()
+})
+
+it('does not show a late terminal failure on a newer notification', async () => {
+  let failOpen: (result: { opened: number; error: string }) => void = () => { throw new Error('open request not started') }
+  const original = backend.call.getMockImplementation()!
+  backend.call.mockImplementation(async (name: string, ...args: unknown[]) => {
+    if (name.endsWith('.OpenTerminals')) return new Promise((resolve) => { failOpen = resolve })
+    return original(name, ...args)
+  })
+  render(<Overlay />)
+  await userEvent.click(await screen.findByRole('button', { name: 'open BTCUSDT in terminal' }))
+  await userEvent.click(screen.getByRole('button', { name: 'dismiss alert' }))
+  await act(async () => {
+    backend.listeners.get('alert:new')?.({ data: { ...alert, id: 2, symbol: 'ETHUSDT' } })
+    failOpen({ opened: 0, error: 'Vataga unavailable' })
+  })
+  expect(await screen.findByRole('button', { name: 'open ETHUSDT in terminal' })).toBeTruthy()
+  expect(screen.queryByText(/Vataga unavailable/)).toBeNull()
 })
 
 it('saves color, volume, turnover and terminal choices without an enable switch', async () => {
