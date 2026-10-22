@@ -1,6 +1,6 @@
 # historical obfuscation check: v0.1.9
 
-the obfuscated release described below received multiple antivirus detections. the standard go profile was evaluated for v0.1.10; v0.1.11 restores garble at the owner's request. the original measurements below describe v0.1.9 only. the cause of the detections requires comparison and vendor analysis.
+the obfuscated release described below received multiple antivirus detections. the standard go profile was evaluated for v0.1.10; v0.1.12 restores garble at the owner's request. the original measurements below describe v0.1.9 only. the cause of the detections requires comparison and vendor analysis.
 
 2026-10-22. the owner limited this work to basic protection and is considering server-side computation. no experimental control-flow transforms, packers or anti-debugging were added.
 
@@ -29,6 +29,8 @@ the windows ci build at `7b088f8` passed checks, and binary-mode govulncheck fou
 
 the owner accepts generic malicious/suspicious labels but requires no trojan classifications. this candidate therefore remains a draft and has not replaced `/download`. the unsigned control build's result did not carry over to the final release file; neither removal of obfuscation nor a clean vulnerability scan proves the absence of malware or guarantees future antivirus verdicts. the owner does not currently have a code-signing certificate.
 
-## release decision: v0.1.11
+## release decision: v0.1.12
 
-the owner authorized restoring garble v0.17.0 and publishing all accumulated changes despite the antivirus results. the zero-trojan publication condition is waived for this release. v0.1.10 remains an unpublished comparison draft; v0.1.11 contains the restored protected profile and the pending table/notification fixes. no clean antivirus verdict is claimed for v0.1.11.
+the owner authorized restoring garble v0.17.0 and publishing all accumulated changes despite the antivirus results. the zero-trojan publication condition is waived for this release. v0.1.10 remains an unpublished comparison draft; v0.1.12 contains the restored protected profile and the pending table/notification fixes. no clean antivirus verdict is claimed for v0.1.12.
+
+the initial v0.1.11 attempt failed a windows activation test. deterministic regression tests reproduced stale polling overwriting activation errors and newer license events. v0.1.12 invalidates those responses and prevents concurrent state polls. the failed tag is retained without publication.

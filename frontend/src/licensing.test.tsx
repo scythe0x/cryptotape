@@ -12,7 +12,7 @@ vi.mock('@wailsio/runtime', () => ({
 }))
 const state = (phase: string, message = '', canRetry = false) => ({ phase, code: '', message, botUrl: 'https://t.me/mythrascalping_bot', canRetry })
 beforeEach(() => { backend.call.mockReset(); backend.listener = undefined })
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.useRealTimers() })
 
 it('keeps useful views unmounted until authorized and removes them on revocation', async () => {
   backend.call.mockResolvedValue(state('locked'))
@@ -31,6 +31,7 @@ it('does not let a late startup snapshot override revocation', async () => {
   expect(screen.queryByText('private application')).toBeNull()
 })
 it('shows short errors and prevents duplicate activation submissions', async () => {
+  vi.useFakeTimers()
   let resolve: ((value: unknown) => void) | undefined
   backend.call.mockImplementation((name: string) => {
     if (name.endsWith('.Activate')) return new Promise<unknown>((done) => { resolve = done })
@@ -53,4 +54,39 @@ it('can retry a saved key without exposing it to the form', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
   await waitFor(() => expect(backend.call).toHaveBeenCalledWith('main.ActivationService.Retry'))
   expect(screen.getByLabelText('Ключ доступа').getAttribute('value')).toBe('')
+})
+
+it('keeps activation errors when an earlier state poll finishes late', async () => {
+  vi.useFakeTimers()
+  let finishPoll: ((value: unknown) => void) | undefined
+  backend.call.mockImplementation((name: string) => {
+    if (name.endsWith('.State')) return new Promise<unknown>((done) => { finishPoll = done })
+    return Promise.resolve(state('locked', 'Неверный ключ'))
+  })
+  render(<Activation />)
+  await act(async () => { backend.listener?.({ data: state('locked') }) })
+  await act(async () => { vi.advanceTimersByTime(250) })
+  fireEvent.change(screen.getByLabelText('Ключ доступа'), { target: { value: 'test-key' } })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Войти' })) })
+  expect(screen.getByRole('alert').textContent).toBe('Неверный ключ')
+  const resolvePoll = finishPoll
+  if (!resolvePoll) throw new Error('state poll did not start')
+  await act(async () => { resolvePoll(state('locked')) })
+  expect(screen.getByRole('alert').textContent).toBe('Неверный ключ')
+})
+
+it('does not let an earlier poll override a newer license event', async () => {
+  vi.useFakeTimers()
+  let finishPoll: ((value: unknown) => void) | undefined
+  backend.call.mockImplementation(() => new Promise<unknown>((done) => { finishPoll = done }))
+  render(<Activation />)
+  await act(async () => { vi.advanceTimersByTime(250) })
+  const resolvePoll = finishPoll
+  if (!resolvePoll) throw new Error('state poll did not start')
+  await act(async () => {
+    backend.listener?.({ data: state('locked', 'Ключ отозван') })
+    resolvePoll(state('ready'))
+  })
+  expect(screen.getByRole('alert').textContent).toBe('Ключ отозван')
+  expect(backend.call).not.toHaveBeenCalledWith('main.ActivationService.Continue')
 })

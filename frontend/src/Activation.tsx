@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Browser, Call, Events } from '@wailsio/runtime'
 import { z } from 'zod'
 import background from './assets/activation.png'
@@ -27,19 +27,32 @@ export function Activation() {
   const opening = useRef(false)
   const submitted = useRef(false)
   const painted = useRef(false)
+  const stateVersion = useRef(0)
+
+  const applyState = useCallback((value: State) => {
+    stateVersion.current++
+    setState(value)
+  }, [])
 
   useEffect(() => {
     let stopped = false
+    let polling = false
     const start = performance.now()
     const stop = Events.On('license:state', (event) => {
-      if (!stopped) setState(stateSchema.parse(event.data))
+      if (!stopped) applyState(stateSchema.parse(event.data))
     })
     const interval = window.setInterval(() => {
       if (opening.current) return
       setProgress(Math.min(94, (performance.now() - start) / 3000 * 94))
-      void stateCall('State').then((value) => { if (!stopped) setState(value) }).catch(() => {
-        if (!stopped) setState({ ...initial, phase: 'locked', message: 'Не удалось проверить доступ' })
-      })
+      if (polling || submitted.current) return
+      polling = true
+      const version = stateVersion.current
+      const current = () => !stopped && !submitted.current && version === stateVersion.current
+      void stateCall('State').then((value) => {
+        if (current()) applyState(value)
+      }).catch(() => {
+        if (current()) applyState({ ...initial, phase: 'locked', message: 'Не удалось проверить доступ' })
+      }).finally(() => { polling = false })
     }, 250)
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') void Call.ByName('main.ActivationService.Quit')
@@ -51,7 +64,7 @@ export function Activation() {
       window.clearInterval(interval)
       window.removeEventListener('keydown', onKey)
     }
-  }, [])
+  }, [applyState])
 
   useEffect(() => {
     if (state.phase !== 'ready') { opening.current = false; return }
@@ -62,16 +75,16 @@ export function Activation() {
       setKey('')
     }).catch(() => {
       opening.current = false
-      setState({ ...initial, phase: 'locked', message: 'Доступ к приложению закрыт' })
+      applyState({ ...initial, phase: 'locked', message: 'Доступ к приложению закрыт' })
     })
-  }, [state.phase])
+  }, [state.phase, applyState])
 
   function firstPaint() {
     if (painted.current) return
     painted.current = true
     requestAnimationFrame(() => requestAnimationFrame(() => {
       void Call.ByName('main.ActivationService.FirstPaint').catch(() => {
-        setState({ ...initial, phase: 'locked', message: 'Не удалось запустить приложение' })
+        applyState({ ...initial, phase: 'locked', message: 'Не удалось запустить приложение' })
       })
     }))
   }
@@ -80,9 +93,14 @@ export function Activation() {
   async function activate() {
     if (submitted.current || (!key.trim() && !state.canRetry)) return
     submitted.current = true
+    const version = ++stateVersion.current
     setBusy(true)
-    try { setState(key.trim() ? await stateCall('Activate', key) : await stateCall('Retry')) }
-    catch { setState({ ...initial, phase: 'locked', message: 'Сервер недоступен' }) }
+    try {
+      const value = key.trim() ? await stateCall('Activate', key) : await stateCall('Retry')
+      if (version === stateVersion.current) applyState(value)
+    } catch {
+      if (version === stateVersion.current) applyState({ ...initial, phase: 'locked', message: 'Сервер недоступен' })
+    }
     finally { submitted.current = false; setBusy(false) }
   }
 
