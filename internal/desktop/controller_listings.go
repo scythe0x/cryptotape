@@ -197,7 +197,7 @@ func (c *Controller) onListing(event listings.Event, received time.Time) {
 func (c *Controller) admitListings(assets []core.ListingDetails, catalog listings.Catalog, received time.Time) {
 	c.pipelineMu.RLock()
 	defer c.pipelineMu.RUnlock()
-	if c.closing || c.blocked.Load() {
+	if c.closing {
 		return
 	}
 	c.mu.RLock()

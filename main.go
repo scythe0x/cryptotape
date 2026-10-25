@@ -5,7 +5,6 @@ import (
 	"embed"
 	"log"
 	"log/slog"
-	"runtime"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -27,16 +26,7 @@ func main() {
 		log.Fatal(err)
 	}
 	service := &DesktopService{settingsSession: SettingsSession{Section: "alerts"}}
-	service.access = func() bool { return runtime.GOOS != "windows" }
-	activation, err := newActivation(service, path)
-	if err != nil {
-		log.Fatal(err)
-	}
-	service.activation = activation
 	controller, err := desktop.NewController(path, func(name string, data any) {
-		if !service.access() {
-			return
-		}
 		if alert, ok := data.(core.Alert); name == "alert:new" && ok && alert.BannerSeconds != 0 && service.overlay != nil {
 			service.showOverlay(alert.ID)
 		}
@@ -55,11 +45,10 @@ func main() {
 		log.Fatal(err)
 	}
 	service.controller = controller
-	controller.SetAccessCheck(service.access)
 	app := application.New(application.Options{
 		Name: "Mythra", Icon: appIcon, Description: "fast Binance futures alerts",
 		Assets:   application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
-		Services: []application.Service{application.NewService(service), application.NewService(activation)},
+		Services: []application.Service{application.NewService(service)},
 		OnShutdown: func() {
 			if service.clock != nil {
 				service.clock.prepareQuit()
@@ -69,11 +58,8 @@ func main() {
 	})
 	service.app = app
 	service.clock = newCandleClock(app, path+".clock.json")
-	if runtime.GOOS == "windows" {
-		activation.createWindow(app)
-	}
 	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name: "main", Title: "Mythra", Width: 440, Height: 740, Hidden: runtime.GOOS == "windows",
+		Name: "main", Title: "Mythra", Width: 440, Height: 740,
 		URL: "/", Frameless: true,
 	})
 	service.mainWindow = mainWindow
@@ -100,10 +86,8 @@ func main() {
 		if err == nil {
 			service.placeOverlay(snapshot.Settings.MonitorID)
 		}
-		service.clock.start(app.Context(), service.access)
-		if runtime.GOOS != "windows" {
-			controller.Start(app.Context())
-		}
+		service.clock.start(app.Context())
+		controller.Start(app.Context())
 	})
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

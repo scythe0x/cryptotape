@@ -49,7 +49,7 @@ func (c *Controller) startPipeline() {
 	go func() {
 		defer c.pipelineWG.Done()
 		for alert := range c.notifications {
-			if c.actionsAllowed() {
+			if c.actionsActive() {
 				c.emit("alert:new", alert)
 			}
 			c.actionWG.Done()
@@ -58,7 +58,7 @@ func (c *Controller) startPipeline() {
 }
 
 func (c *Controller) saveCandidates(batch []queuedCandidate) {
-	if !c.actionsAllowed() {
+	if !c.actionsActive() {
 		c.queueMu.Lock()
 		for _, job := range batch {
 			delete(c.pending, job.id)
@@ -95,7 +95,7 @@ func (c *Controller) saveCandidates(batch []queuedCandidate) {
 		return
 	}
 	for i, alert := range alerts {
-		if alert.ID == 0 || !c.actionsAllowed() {
+		if alert.ID == 0 || !c.actionsActive() {
 			c.actionWG.Done()
 			continue
 		}

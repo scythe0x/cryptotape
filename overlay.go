@@ -24,7 +24,7 @@ func (s *DesktopService) HideOverlay(afterID int64) {
 func (s *DesktopService) showOverlay(id int64) {
 	s.overlayMu.Lock()
 	defer s.overlayMu.Unlock()
-	if s.requireAccess() != nil || !s.controller.BannersEnabled() || s.overlay == nil || id <= s.hiddenThroughID {
+	if !s.controller.BannersEnabled() || s.overlay == nil || id <= s.hiddenThroughID {
 		return
 	}
 	s.latestID = max(s.latestID, id)
@@ -37,11 +37,6 @@ func (s *DesktopService) showOverlay(id int64) {
 }
 
 func (s *DesktopService) ResizeOverlay(height int, afterID int64) {
-	s.runMu.RLock()
-	defer s.runMu.RUnlock()
-	if s.requireAccess() != nil {
-		return
-	}
 	s.overlayMu.Lock()
 	defer s.overlayMu.Unlock()
 	if height <= 0 || afterID < s.latestID || afterID <= s.hiddenThroughID || s.overlay == nil || !s.controller.BannersEnabled() {

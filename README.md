@@ -1,14 +1,14 @@
 # Mythra
 
-windows 11 screener for first-crossing Binance USDⓈ-M futures alerts. the Go market engine runs independently of the Wails UI. alert rules, settings, and the alert log live in SQLite.
+free windows 11 screener for first-crossing Binance USDⓈ-M futures alerts. the Go market engine runs independently of the Wails UI. alert rules, settings, and the alert log live in SQLite.
 
 ## windows
 
-all application windows use custom chrome (`Frameless: true`). use `WindowTitleBar` for regular windows; keep activation and alert overlays frameless as well. do not introduce native title bars or native dialog windows. settings close hides the window; main close quits the application.
+all application windows use custom chrome (`Frameless: true`). use `WindowTitleBar` for regular windows; keep alert overlays frameless as well. do not introduce native title bars or native dialog windows. settings close hides the window; main close quits the application.
 
 ## run and build
 
-requires Go 1.26.1, Node.js 22+, and [Wails 3 CLI](https://v3.wails.io/getting-started/installation/). Windows also needs the WebView2 runtime.
+requires Go 1.26.10, Node.js 22+, and [Wails 3 CLI](https://v3.wails.io/getting-started/installation/). Windows also needs the WebView2 runtime.
 
 ```sh
 cd frontend
@@ -29,16 +29,16 @@ the second command writes `build/bin/Mythra.exe`. all frontend assets and built-
 
 ## releases and updates
 
-the public windows download is [scalping.mythra.pw/download](https://scalping.mythra.pw/download). successful releases atomically replace the executable on the download server after publishing it to the private github repository.
+the application requires no account, activation key or subscription. release executables are stored in this private repository’s github releases; access follows repository permissions. there is no download deployment to the vps.
 
-pushing a version tag such as `v0.1.6` runs `.github/workflows/release.yml`: frontend/backend checks, a windows build and a draft release containing `Mythra.exe`. a normal branch push runs checks only; it does not publish a release. publish the draft after checking the exact executable with antivirus tools. `.github/workflows/download.yml` then updates the public download automatically.
+pushing a version tag such as `v0.1.14` runs `.github/workflows/release.yml`: frontend/backend checks, a windows build and a draft release containing `Mythra.exe`. a normal branch push runs checks only; it does not publish a release. publish the draft after checking the executable. windows builds use the standard go compiler without obfuscation.
 
-for the next release, update `frontend/package.json` and its lockfile with `npm --prefix frontend version 0.1.6 --no-git-tag-version`, then set both version fields in `build/windows/info.json` to `0.1.6`. commit and push those changes before tagging that commit:
+for the next release, update `frontend/package.json` and its lockfile with `npm --prefix frontend version 0.1.14 --no-git-tag-version`, then set both version fields in `build/windows/info.json` to `0.1.14`. commit and push those changes before tagging that commit:
 
 ```sh
 git push origin main
-git tag -a v0.1.6 -m "Mythra v0.1.6"
-git push origin v0.1.6
+git tag -a v0.1.14 -m "Mythra v0.1.14"
+git push origin v0.1.14
 ```
 
 use a new matching version each time. the release workflow rejects a tag that differs from the application versions; a failed run does not publish a release.
@@ -126,7 +126,3 @@ go test ./internal/storage -run '^$' -bench BenchmarkDynamicPeakObservation -ben
 cd frontend
 VITE_DYNAMIC_AUDIT=1 npm test -- src/dynamic-audit.test.tsx
 ```
-
-## licensing
-
-windows builds require a key from [the mythra bot](https://t.me/mythrascalping_bot). see [licensing operations and protection limits](docs/licensing.md) for server administration, equipment binding, release builds and the vpn port migration.

@@ -19,8 +19,6 @@ import (
 type EventSink func(name string, data any)
 
 type Controller struct {
-	accessCheck        func() bool
-	blocked            atomic.Bool
 	actions            context.Context
 	actionCancel       context.CancelFunc
 	listingMu          sync.Mutex
@@ -135,8 +133,6 @@ func (c *Controller) Start(ctx context.Context) {
 		c.actionCancel()
 	}
 	c.actions, c.actionCancel = context.WithCancel(context.Background())
-	c.blocked.Store(false)
-	c.audio.Block(false)
 	c.mu.Unlock()
 	c.feedWG.Add(1)
 	go func() {
@@ -278,7 +274,7 @@ func (c *Controller) SessionAlerts() ([]core.Alert, error) {
 func (c *Controller) onQuote(quote core.Quote) {
 	c.pipelineMu.RLock()
 	defer c.pipelineMu.RUnlock()
-	if c.closing || c.blocked.Load() {
+	if c.closing {
 		return
 	}
 	for _, candidate := range c.engine.Process(quote) {

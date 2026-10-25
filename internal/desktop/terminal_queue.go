@@ -36,7 +36,7 @@ func (c *Controller) startTerminals() {
 					c.terminalWaitMs.Store(time.Since(job.queued).Milliseconds())
 					status := "ok"
 					var err error
-					if !c.actionsAllowed() {
+					if !c.actionsActive() {
 						status, err = "cancelled", context.Canceled
 					} else if !time.Now().Before(job.expires) {
 						status, err = "stale", errors.New("terminal command expired in queue")

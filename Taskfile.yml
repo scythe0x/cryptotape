@@ -28,7 +28,7 @@ tasks:
   build:windows:binary:
     cmds:
       - wails3 generate syso -arch amd64 -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out wails_windows_amd64.syso
-      - go run ./cmd/build-windows
+      - go build -tags production -trimpath -ldflags="-H windowsgui" -o build/bin/Mythra.exe .
 
   check:
     cmds:

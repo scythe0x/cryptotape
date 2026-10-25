@@ -6,6 +6,3 @@ build/bin/
 *.log
 .DS_Store
 listings-source.json
-
-# private obfuscation seeds and release diagnostics
-build/private/

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -26,7 +27,7 @@ func (w *testNativeWindow) EmitEvent(name string, data ...any) bool {
 
 func TestSettingsWindowReopensSameWindowWithFreshSession(t *testing.T) {
 	window := &testNativeWindow{}
-	s := &DesktopService{access: func() bool { return true }, settingsWindow: window, settingsSession: SettingsSession{Section: "alerts"}}
+	s := &DesktopService{settingsWindow: window, settingsSession: SettingsSession{Section: "alerts"}}
 	for _, section := range []string{"columns", "alerts"} {
 		if err := s.OpenSettings(section); err != nil {
 			t.Fatal(err)
@@ -72,7 +73,7 @@ func TestOverlayShowsWithoutBrowserMeasurementAndCanReopen(t *testing.T) {
 		}
 	})
 	window := &testNativeWindow{}
-	s := &DesktopService{access: func() bool { return true }, controller: controller, overlay: window}
+	s := &DesktopService{controller: controller, overlay: window}
 	s.showOverlay(1)
 	if !s.visible || s.overlayHeight != compactOverlayHeight || !reflect.DeepEqual(window.calls, []string{"show"}) {
 		t.Fatal("native visibility must not wait for hidden webview frames")
@@ -98,21 +99,39 @@ func TestOverlayShowsWithoutBrowserMeasurementAndCanReopen(t *testing.T) {
 	}
 }
 
-func TestDesktopRPCsRejectAccessBeforeControllerUse(t *testing.T) {
-	s := &DesktopService{}
-	if _, err := s.GetSnapshot(); err == nil {
-		t.Fatal("snapshot was accessible")
+func TestDesktopRPCsWorkWithoutActivation(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "license.dat"), []byte("invalid legacy data"), 0600); err != nil {
+		t.Fatal(err)
 	}
-	if err := s.OpenSettings("alerts"); err == nil {
-		t.Fatal("settings were accessible")
+	controller, err := desktop.NewController(filepath.Join(directory, "state.db"), func(string, any) {})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := s.OpenTerminal(0, "BTCUSDT", "vataga"); err == nil {
-		t.Fatal("terminal was accessible")
+	t.Cleanup(func() {
+		if err := controller.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	window := &testNativeWindow{}
+	service := &DesktopService{controller: controller, settingsWindow: window}
+	snapshot, err := service.GetSnapshot()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if s.SoundIDs() != nil || s.Monitors() != nil {
-		t.Fatal("native data was accessible")
+	if err := service.SaveSettings(snapshot.Settings); err != nil {
+		t.Fatal(err)
 	}
-	if result := s.OpenTerminals(0, "BTCUSDT", []string{"vataga"}); result.Error == "" {
-		t.Fatal("terminal batch was accessible")
+	if err := service.OpenSettings("alerts"); err != nil {
+		t.Fatal(err)
+	}
+	if len(service.SoundIDs()) == 0 {
+		t.Fatal("built-in sounds unavailable")
+	}
+	if _, err := service.ListAlerts(0, 100); err != nil {
+		t.Fatal(err)
+	}
+	if service.ListingSource().KeyConfigured {
+		t.Fatal("listing key unexpectedly required at startup")
 	}
 }

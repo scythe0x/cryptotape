@@ -92,18 +92,20 @@ func TestClockWindowOptions(t *testing.T) {
 	}
 }
 
-func TestClockRPCsRequireAccess(t *testing.T) {
-	service := &DesktopService{}
-	if err := service.OpenClock(); err == nil {
-		t.Fatal("clock opened without access")
+func TestClockTimezoneWorksWithoutActivation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "clock.json")
+	service := &DesktopService{clock: newCandleClock(nil, path)}
+	if err := service.SetClockTimezone("UTC345"); err != nil {
+		t.Fatal(err)
 	}
-	if err := service.SetClockTimezone("UTC0"); err == nil {
-		t.Fatal("timezone changed without access")
+	zone, err := service.GetClockTimezone()
+	if err != nil || zone != "UTC345" {
+		t.Fatalf("timezone: %q, %v", zone, err)
 	}
-	if _, err := service.GetClockTimezone(); err == nil {
-		t.Fatal("timezone read without access")
+	if newCandleClock(nil, path).state.Timezone != zone {
+		t.Fatal("timezone was not persisted")
 	}
-	if _, err := service.ClockOffset(); err == nil {
-		t.Fatal("exchange time read without access")
+	if err := service.SetClockTimezone("invalid"); err == nil {
+		t.Fatal("invalid timezone accepted")
 	}
 }

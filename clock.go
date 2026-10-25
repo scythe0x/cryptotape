@@ -115,11 +115,11 @@ func (c *candleClock) capture() {
 	}
 }
 
-func (c *candleClock) start(ctx context.Context, allowed func() bool) {
+func (c *candleClock) start(ctx context.Context) {
 	c.mu.Lock()
 	restore := c.state.Visible
 	c.mu.Unlock()
-	if restore && allowed() {
+	if restore {
 		if err := c.open(); err != nil {
 			slog.Warn("restore clock", "error", err)
 		}
@@ -146,9 +146,6 @@ func (c *candleClock) start(ctx context.Context, allowed func() bool) {
 }
 
 func (s *DesktopService) OpenClock() error {
-	if err := s.requireAccess(); err != nil {
-		return err
-	}
 	if s.clock == nil {
 		return errors.New("clock unavailable")
 	}
@@ -156,18 +153,12 @@ func (s *DesktopService) OpenClock() error {
 }
 
 func (s *DesktopService) GetClockTimezone() (string, error) {
-	if err := s.requireAccess(); err != nil {
-		return "", err
-	}
 	s.clock.mu.Lock()
 	defer s.clock.mu.Unlock()
 	return s.clock.state.Timezone, nil
 }
 
 func (s *DesktopService) SetClockTimezone(zone string) error {
-	if err := s.requireAccess(); err != nil {
-		return err
-	}
 	if !validClockTimezone(zone) {
 		return errors.New("invalid clock timezone")
 	}
@@ -180,26 +171,6 @@ func (s *DesktopService) SetClockTimezone(zone string) error {
 		return err
 	}
 	return nil
-}
-
-func (c *candleClock) restore() {
-	c.mu.Lock()
-	visible := c.state.Visible
-	c.mu.Unlock()
-	if visible {
-		if err := c.open(); err != nil {
-			slog.Warn("restore clock", "error", err)
-		}
-	}
-}
-
-func (c *candleClock) hide() {
-	c.mu.Lock()
-	window := c.window
-	c.mu.Unlock()
-	if window != nil {
-		window.Hide()
-	}
 }
 
 func (c *candleClock) prepareQuit() {

@@ -25,7 +25,7 @@ func (c *Controller) OpenTerminal(id int64, symbol, terminal string) error {
 
 func (c *Controller) OpenTerminals(id int64, symbol string, terminals []string) OpenResult {
 	c.pipelineMu.RLock()
-	if c.closing || !c.actionsAllowed() {
+	if c.closing || !c.actionsActive() {
 		c.pipelineMu.RUnlock()
 		return OpenResult{Error: "controller closed"}
 	}
@@ -64,7 +64,7 @@ func (c *Controller) OpenTerminals(id int64, symbol string, terminals []string) 
 }
 
 func (c *Controller) openInTerminal(ctx context.Context, symbol, terminal string, exchanges ...string) error {
-	if !c.actionsAllowed() || ctx.Err() != nil {
+	if !c.actionsActive() || ctx.Err() != nil {
 		return context.Canceled
 	}
 	if len(exchanges) == 0 {
@@ -72,7 +72,7 @@ func (c *Controller) openInTerminal(ctx context.Context, symbol, terminal string
 	}
 	var unavailable []error
 	for _, exchange := range exchanges {
-		if !c.actionsAllowed() || ctx.Err() != nil {
+		if !c.actionsActive() || ctx.Err() != nil {
 			return context.Canceled
 		}
 		var err error
@@ -118,7 +118,7 @@ func (c *Controller) openInTerminals(ctx context.Context, symbol string, termina
 		deadline = time.Now().Add(2 * time.Second)
 	}
 	c.pipelineMu.RLock()
-	if c.closing || !c.actionsAllowed() {
+	if c.closing || !c.actionsActive() {
 		c.pipelineMu.RUnlock()
 		return 0, errors.New("controller closed")
 	}
